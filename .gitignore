@@ -1,0 +1,12 @@
+config.json
+data/*.sqlite
+data/*.sqlite-*
+.state.json
+x_curl/
+*.curl
+*.log
+__pycache__/
+*.pyc
+.venv/
+.omc/
+.DS_Store

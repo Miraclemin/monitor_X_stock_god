@@ -1,0 +1,50 @@
+{
+  "api_key": "YOUR_KEY",
+  "watch": {
+    "username": "aleabitoreddit",
+    "tag": "serenity_stock_god",
+    "interval_seconds": 0.1
+  },
+  "rule_id": "",
+  "db_path": "data/monitor.sqlite",
+  "deactivate_on_exit": false,
+  "history": {
+    "enabled": true,
+    "run_on_start": true,
+    "mode_on_start": "incremental",
+    "x_curl_dir": "../x_curl",
+    "max_pages": 200,
+    "pause_seconds": 0.8
+  },
+  "llm": {
+    "url": "YOUR_LLM_URL",
+    "key": "YOUR_LLM_KEY",
+    "model": "YOUR_LLM_MODEL"
+  },
+  "translate": {
+    "enabled": true
+  },
+  "email": {
+    "enabled": true,
+    "smtp_host": "YOUR_SMTP_HOST",
+    "smtp_port": 587,
+    "use_tls": true,
+    "user": "YOUR_EMAIL_USER",
+    "password": "YOUR_EMAIL_PASSWORD",
+    "from": "YOUR_FROM_EMAIL",
+    "to": ["YOUR_TO_EMAIL"]
+  },
+  "notify": {
+    "desktop": true,
+    "sound": true,
+    "telegram": {
+      "enabled": false,
+      "bot_token": "",
+      "chat_id": ""
+    },
+    "webhook": {
+      "enabled": false,
+      "url": ""
+    }
+  }
+}

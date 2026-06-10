@@ -465,7 +465,141 @@ class Monitor:
             f"时间：{tweet.get('created_at') or '-'}\n"
             f"原帖：{tweet.get('url') or ''}"
         )
-        send_email(subject, body)
+        send_email(subject, body, body_html=self._single_tweet_html(subject, username, symbols, tweet, zh))
+
+    def _single_tweet_html(self, subject, username, symbols, tweet, zh):
+        symbol_html = "".join(
+            f"<span class=\"tag\">{html.escape(_format_symbol_label(symbol))}</span>" for symbol in symbols
+        )
+        if not symbol_html:
+            symbol_html = "<span class=\"tag muted\">无股票符号</span>"
+
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    background: #0b1020;
+                    color: #172033;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+                    line-height: 1.58;
+                    font-size: 14px;
+                }}
+                .email-bg {{ width: 100%; background: #0b1020; padding: 24px 0; }}
+                .shell {{
+                    max-width: 820px;
+                    margin: 0 auto;
+                    background: #f8fafc;
+                    border: 1px solid #27324a;
+                    border-radius: 14px;
+                    overflow: hidden;
+                }}
+                .hero {{
+                    background: #10182c;
+                    color: #ffffff;
+                    padding: 30px 34px 26px;
+                }}
+                .brand {{
+                    color: #67e8f9;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: 0.14em;
+                    text-transform: uppercase;
+                    margin-bottom: 12px;
+                }}
+                h1 {{ margin: 0; font-size: 26px; line-height: 1.24; color: #ffffff; }}
+                .summary {{ margin-top: 14px; color: #cbd5e1; }}
+                .content {{ padding: 26px 30px 32px; }}
+                .ticker-row {{ margin-bottom: 16px; }}
+                .tag {{
+                    display: inline-block;
+                    padding: 4px 9px;
+                    margin: 0 6px 6px 0;
+                    border-radius: 999px;
+                    background: #dff7f2;
+                    color: #0f766e;
+                    font-weight: 800;
+                    font-size: 13px;
+                }}
+                .tag.muted {{ background: #e2e8f0; color: #475569; }}
+                .meta {{
+                    color: #64748b;
+                    font-size: 13px;
+                    margin-bottom: 16px;
+                }}
+                .panel {{
+                    border-radius: 10px;
+                    padding: 15px 17px;
+                    margin-bottom: 14px;
+                }}
+                .translation {{
+                    background: #f0fdfa;
+                    border: 1px solid #b6ece4;
+                }}
+                .original {{
+                    color: #475569;
+                    background: #ffffff;
+                    border: 1px solid #d8e1ed;
+                }}
+                h2 {{
+                    margin: 0 0 8px;
+                    font-size: 15px;
+                    color: #0f172a;
+                    border-left: 4px solid #14b8a6;
+                    padding-left: 8px;
+                }}
+                p {{ margin: 0; }}
+                .action {{
+                    display: inline-block;
+                    margin-top: 6px;
+                    color: #2563eb;
+                    text-decoration: none;
+                    font-weight: 800;
+                }}
+                .footer {{
+                    padding: 16px 30px 24px;
+                    color: #64748b;
+                    font-size: 12px;
+                    background: #eef2f7;
+                    border-top: 1px solid #d6dee9;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="email-bg">
+                <div class="shell">
+                    <div class="hero">
+                        <div class="brand">serenity stock monitor</div>
+                        <h1>{html.escape(subject)}</h1>
+                        <div class="summary">
+                            @{html.escape(username)} · {html.escape(tweet.get('created_at') or '-')}
+                        </div>
+                    </div>
+                    <div class="content">
+                        <div class="ticker-row">{symbol_html}</div>
+                        <div class="meta">原帖：<a class="action" href="{html.escape(tweet.get('url') or '')}">打开 X 链接</a></div>
+                        <section class="panel translation">
+                            <h2>中文翻译</h2>
+                            <p>{html.escape(zh or '').replace(chr(10), '<br>')}</p>
+                        </section>
+                        <section class="panel original">
+                            <h2>原文</h2>
+                            <p>{html.escape(tweet.get('text') or '').replace(chr(10), '<br>')}</p>
+                        </section>
+                    </div>
+                    <div class="footer">
+                        本邮件由 monitor_X_stock_god 自动生成。内容仅用于研究和跟踪，不构成投资建议。
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
 
     def _on_error(self, ws, error):
         print(f"WebSocket error: {error}")

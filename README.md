@@ -72,7 +72,7 @@ cp .env.example .env
 | `HISTORY_ENABLED` | 是否启用历史抓取。 |
 | `HISTORY_RUN_ON_START` | 启动 `monitor.py` 前是否先跑一次历史增量补漏。 |
 | `HISTORY_MODE_ON_START` | 启动时历史模式，通常 `incremental`。 |
-| `HISTORY_X_CURL_DIR` | 存放 X GraphQL curl 文件的目录，默认 `../x_curl`。 |
+| `HISTORY_X_CURL_DIR` | 存放 X GraphQL curl 文件的目录，默认 `x_curl`（模块内，已 gitignore）。 |
 | `HISTORY_MAX_PAGES` | 每类时间线最大翻页数。 |
 | `HISTORY_PAUSE_SECONDS` | 翻页间隔，避免请求过快。 |
 | `LLM_URL` / `LLM_KEY` / `LLM_MODEL` | 任意 OpenAI 兼容 Chat Completions 接口、key、模型名。 |
@@ -238,7 +238,7 @@ Environment variables:
 | `HISTORY_ENABLED` | Enable historical fetching. |
 | `HISTORY_RUN_ON_START` | Run an incremental history catch-up before `monitor.py` connects. |
 | `HISTORY_MODE_ON_START` | Startup history mode, usually `incremental`. |
-| `HISTORY_X_CURL_DIR` | Directory containing X GraphQL curl files, default `../x_curl`. |
+| `HISTORY_X_CURL_DIR` | Directory containing X GraphQL curl files, default `x_curl` (in-module, gitignored). |
 | `HISTORY_MAX_PAGES` | Maximum pages per timeline source. |
 | `HISTORY_PAUSE_SECONDS` | Pause between pages to avoid excessive request rate. |
 | `LLM_URL` / `LLM_KEY` / `LLM_MODEL` | Any OpenAI-compatible Chat Completions endpoint, key, and model name. |

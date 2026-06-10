@@ -65,7 +65,7 @@ cp .env.example .env
 | `TWITTERAPI_KEY` | twitterapi.io 的 API key（注册后在控制台获取）。也可用同名系统环境变量覆盖。 |
 | `WATCH_USERNAME` | 要监控的 X 用户名，不带 `@`。 |
 | `WATCH_TAG` | twitterapi.io 规则标签，建议用唯一名称。 |
-| `WATCH_INTERVAL_SECONDS` | 规则检查间隔，保守用默认 `0.1`。 |
+| `WATCH_INTERVAL_SECONDS` | 规则后台检查间隔，默认 `60` 秒。tweet_filter 会按该间隔轮询；空结果也可能产生最低请求费。 |
 | `RULE_ID` | 已有规则 ID；首次留空，运行 `python rules.py ensure` 自动创建。 |
 | `DB_PATH` | SQLite 路径，默认 `data/monitor.sqlite`（相对模块目录）。 |
 | `DEACTIVATE_ON_EXIT` | Ctrl+C 退出时是否停用规则以停止计费。 |
@@ -183,13 +183,13 @@ python rules.py deactivate
 
 - 历史回补：免费，走你自己的 X GraphQL curl 和浏览器 cookie。
 - premium / 超级关注帖：只有 curl 路径可以获取，twitterapi.io 通常拿不到。
-- 实时 WebSocket：twitterapi.io 按匹配到的 tweet 计费；只监控少量账号时成本通常很低。
+- 实时 WebSocket / tweet_filter：twitterapi.io 会在服务端按 `WATCH_INTERVAL_SECONDS` 检查规则。空结果也可能产生最低请求费；间隔越短，成本越高。默认 `60` 秒是成本和及时性的折中。
 - LLM 翻译：按你的模型服务商规则计费。
 - 邮件：通常由 SMTP 服务商限制配额，不由本项目计费。
 
 ## 停止计费 / 关闭规则
 
-twitterapi.io 的计费发生在服务端：只要规则处于激活状态（`is_effect=1`，ON_AIR），就会对匹配到的新帖计费，**和本地程序是否在运行无关**。所以「关掉程序」不等于「停止计费」。
+twitterapi.io 的计费发生在服务端：只要规则处于激活状态（`is_effect=1`，ON_AIR），服务端就会按 `WATCH_INTERVAL_SECONDS` 周期检查规则；即使没有新帖，空结果也可能产生最低请求费。这个过程**和本地程序是否在运行无关**，所以「关掉程序」不等于「停止计费」。
 
 停止计费 = 把规则停用（`is_effect=0`）：
 
@@ -207,7 +207,7 @@ python rules.py deactivate
 python rules.py list   # 看到 is_effect=0 才算真的停止计费
 ```
 
-> 提示：计费按匹配到的真实新帖计算。监控发帖不频繁的账号时，即使规则短时间空开着，费用也极低；需要彻底零计费时再 `deactivate` 即可。重新使用时运行 `python monitor.py` 或 `python rules.py ensure` 会自动重新激活。
+> 提示：tweet_filter 是按规则间隔在服务端检查，空结果也可能有最低请求费。需要降低成本时调大 `WATCH_INTERVAL_SECONDS`；需要彻底零计费时执行 `deactivate`。重新使用时运行 `python monitor.py` 或 `python rules.py ensure` 会自动重新激活。
 
 ## 注意事项与免责声明
 
@@ -286,7 +286,7 @@ Environment variables:
 | `TWITTERAPI_KEY` | Your twitterapi.io API key (from its dashboard). A real environment variable of the same name overrides the `.env` value. |
 | `WATCH_USERNAME` | The X username to monitor, without `@`. |
 | `WATCH_TAG` | twitterapi.io rule tag. Use a project-specific unique name. |
-| `WATCH_INTERVAL_SECONDS` | Rule check interval. The default `0.1` is usually fine. |
+| `WATCH_INTERVAL_SECONDS` | Server-side rule check interval. Default `60` seconds. tweet_filter checks on this interval; empty results may still incur the minimum request charge. |
 | `RULE_ID` | Existing rule ID. Leave empty on first use; `python rules.py ensure` creates one. |
 | `DB_PATH` | SQLite path, default `data/monitor.sqlite` (relative to the module directory). |
 | `DEACTIVATE_ON_EXIT` | Whether Ctrl+C deactivates the rule to stop billing. |
@@ -404,13 +404,13 @@ python rules.py deactivate
 
 - Historical backfill: free, using your own X GraphQL curl requests and browser cookies.
 - Premium / Super Follow posts: available only through the curl path; twitterapi.io usually cannot fetch them.
-- Real-time WebSocket: twitterapi.io charges by matched tweet. Monitoring a small number of accounts is usually low cost.
+- Real-time WebSocket / tweet_filter: twitterapi.io checks the rule server-side at `WATCH_INTERVAL_SECONDS`. Empty results may still incur the minimum request charge; shorter intervals cost more. The default `60` seconds balances cost and timeliness.
 - LLM translation: charged by your model provider.
 - Email: usually subject to SMTP provider quota, not charged by this project.
 
 ## Stop Billing / Deactivate The Rule
 
-twitterapi.io billing happens server-side: as long as the rule is active (`is_effect=1`, ON_AIR) it is billed for matched posts, **regardless of whether the local program is running**. So "closing the program" is NOT the same as "stopping billing".
+twitterapi.io billing happens server-side: as long as the rule is active (`is_effect=1`, ON_AIR), the service checks the rule at `WATCH_INTERVAL_SECONDS`. Empty results may still incur the minimum request charge, **regardless of whether the local program is running**. So "closing the program" is NOT the same as "stopping billing".
 
 Stop billing = deactivate the rule (`is_effect=0`):
 
@@ -428,7 +428,7 @@ Cases:
 python rules.py list   # is_effect=0 means billing is really stopped
 ```
 
-> Note: billing is per matched real post. For an account that posts infrequently, even leaving the rule active briefly costs very little. Deactivate when you want zero billing. Running `python monitor.py` or `python rules.py ensure` re-activates it.
+> Note: tweet_filter checks server-side on the configured interval, and empty results may still have a minimum request charge. Increase `WATCH_INTERVAL_SECONDS` to reduce cost. Deactivate when you want zero billing. Running `python monitor.py` or `python rules.py ensure` re-activates it.
 
 ## Notes And Disclaimer
 

@@ -44,11 +44,11 @@ def load_config():
         "watch": {
             "username": _str("WATCH_USERNAME", "aleabitoreddit"),
             "tag": _str("WATCH_TAG", "serenity_stock_god"),
-            "interval_seconds": _float("WATCH_INTERVAL_SECONDS", 0.1),
+            "interval_seconds": _float("WATCH_INTERVAL_SECONDS", 60),
         },
         "rule_id": _str("RULE_ID"),
         "db_path": _str("DB_PATH", "data/monitor.sqlite"),
-        "deactivate_on_exit": _bool("DEACTIVATE_ON_EXIT", False),
+        "deactivate_on_exit": _bool("DEACTIVATE_ON_EXIT", True),
         "history": {
             "enabled": _bool("HISTORY_ENABLED", True),
             "run_on_start": _bool("HISTORY_RUN_ON_START", True),

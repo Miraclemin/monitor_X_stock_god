@@ -10,13 +10,14 @@ from config import load_config
 from email_sender import send_email
 from notify import notify
 from rules import RuleManager
-from store import normalize_tweet, save_tweet, update_translation
+from store import get_translation, normalize_tweet, save_tweet, update_translation
 
 
 translate_text = importlib.import_module("translate").translate_text
 
 
 WS_URL = "wss://ws.twitterapi.io/twitter/tweet/websocket"
+STARTUP_BATCH_SIZE = 20
 
 
 class Monitor:
@@ -26,6 +27,7 @@ class Monitor:
         self.processed_ids = set()
         self.ws = None
         self._shutting_down = False
+        self._startup_batch_handled = False
 
     def run(self):
         self._activate_rule()
@@ -81,8 +83,12 @@ class Monitor:
             return
 
         if event_type == "tweet":
-            for tweet in event.get("tweets") or []:
-                self._handle_tweet(tweet, event_type)
+            tweets = event.get("tweets") or []
+            is_startup_batch = self._is_startup_batch(tweets)
+            if is_startup_batch:
+                self._send_startup_batch_email(tweets)
+            for tweet in tweets:
+                self._handle_tweet(tweet, event_type, force_email=is_startup_batch)
             return
 
         if event_type == "fast_tweet":
@@ -91,7 +97,7 @@ class Monitor:
 
         print(f"Unhandled event_type={event_type}")
 
-    def _handle_tweet(self, raw_tweet, event_type):
+    def _handle_tweet(self, raw_tweet, event_type, force_email=False):
         tweet = normalize_tweet(raw_tweet, event_type)
         tweet_id = tweet.get("tweet_id")
         if not tweet_id or tweet_id in self.processed_ids:
@@ -104,22 +110,47 @@ class Monitor:
 
         if not is_new:
             print(f"duplicate tweet_id={tweet_id}")
-            return
+            if not force_email:
+                return
 
         username = tweet.get("author_screen_name") or self.config["watch"]["username"]
-        zh = translate_text(tweet.get("text") or "")
+        zh = get_translation(tweet_id) if force_email else None
+        if not zh:
+            zh = translate_text(tweet.get("text") or "")
         if zh:
             update_translation(tweet_id, zh)
-            self._send_realtime_email(username, symbols, tweet, zh)
+            self._send_realtime_email(username, symbols, tweet, zh, startup_batch=force_email)
 
+        if force_email and not is_new:
+            return
         title = f"🔔 ${username} 新帖"
         symbol_text = ", ".join(f"${s}" for s in symbols) if symbols else "无股票符号"
         body = f"{symbol_text}\n{(tweet.get('text') or '')[:200]}"
         notify(title, body, tweet.get("url"), sound=self.config.get("notify", {}).get("sound", True))
 
-    def _send_realtime_email(self, username, symbols, tweet, zh):
+    def _is_startup_batch(self, tweets):
+        if self._startup_batch_handled or len(tweets) < STARTUP_BATCH_SIZE:
+            return False
+        self._startup_batch_handled = True
+        return True
+
+    def _send_startup_batch_email(self, tweets):
+        watch = self.config["watch"]
+        subject = f"监控已启动 @{watch['username']} 最近{len(tweets)}条"
+        body = (
+            f"监控账号：@{watch['username']}\n"
+            f"规则标签：{watch['tag']}\n"
+            f"规则 ID：{self.rule_id or '-'}\n"
+            f"检查间隔：{watch['interval_seconds']} 秒\n"
+            f"启动批量推送：{len(tweets)} 条\n"
+            "后续会逐条翻译并发送这批启动推文。"
+        )
+        send_email(subject, body)
+
+    def _send_realtime_email(self, username, symbols, tweet, zh, startup_batch=False):
         symbol_text = ", ".join(f"${s}" for s in symbols) if symbols else "无股票符号"
-        subject = f"📈 {username} 新帖 {symbol_text}"
+        label = "启动补发" if startup_batch else "新帖"
+        subject = f"📈 {username} {label} {symbol_text}"
         body = (
             f"【中文翻译】\n{zh}\n\n"
             f"【原文】\n{tweet.get('text') or ''}\n\n"

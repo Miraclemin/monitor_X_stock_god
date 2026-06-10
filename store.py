@@ -111,6 +111,14 @@ def update_translation(tweet_id, text_zh):
         con.execute("update tweets set text_zh=? where tweet_id=?", (text_zh, tweet_id))
 
 
+def get_translation(tweet_id):
+    with connect() as con:
+        row = con.execute("select text_zh from tweets where tweet_id=?", (tweet_id,)).fetchone()
+    if not row:
+        return None
+    return row["text_zh"]
+
+
 def _save_row(row, symbols, mentioned_at, source):
     with connect() as con:
         cur = con.execute(

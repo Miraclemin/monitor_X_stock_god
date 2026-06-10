@@ -1,3 +1,4 @@
+.env
 config.json
 data/*.sqlite
 data/*.sqlite-*

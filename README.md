@@ -34,8 +34,8 @@
 - `email_sender.py`: SMTP / STARTTLS 邮件发送。
 - `rules.py`: twitterapi.io tweet filter 规则管理。
 - `notify.py`: 桌面通知、Telegram、Webhook 和终端通知。
-- `config.py`: 加载 `config.json`，支持环境变量覆盖 API key。
-- `config.example.json`: 可提交的配置模板，不含真实密钥。
+- `config.py`: 从 `.env` 加载配置，组装成程序使用的结构。
+- `.env.example`: 可提交的配置模板，不含真实密钥。
 - `requirements.txt`: Python 依赖。
 
 ## 安装
@@ -50,89 +50,45 @@ pip install -r requirements.txt
 
 ## 配置
 
-先复制模板：
+本项目用 `.env` 文件管理配置。先复制模板：
 
 ```bash
-cp config.example.json config.json
+cp .env.example .env
 ```
 
-然后编辑 `config.json`。`config.json` 会包含 API key、LLM key、SMTP 密码和 X cookie 文件路径，已经被 `.gitignore` 忽略。切勿提交、上传或分享该文件。
+然后编辑 `.env`。该文件包含 twitterapi.io key、LLM key、SMTP 密码等敏感信息，已被 `.gitignore` 忽略，切勿提交、上传或分享。
 
-### `api_key`
+环境变量说明：
 
-twitterapi.io 的 API key。注册 twitterapi.io 后在控制台获取。
+| 变量 | 说明 |
+|---|---|
+| `TWITTERAPI_KEY` | twitterapi.io 的 API key（注册后在控制台获取）。也可用同名系统环境变量覆盖。 |
+| `WATCH_USERNAME` | 要监控的 X 用户名，不带 `@`。 |
+| `WATCH_TAG` | twitterapi.io 规则标签，建议用唯一名称。 |
+| `WATCH_INTERVAL_SECONDS` | 规则检查间隔，保守用默认 `0.1`。 |
+| `RULE_ID` | 已有规则 ID；首次留空，运行 `python rules.py ensure` 自动创建。 |
+| `DB_PATH` | SQLite 路径，默认 `data/monitor.sqlite`（相对模块目录）。 |
+| `DEACTIVATE_ON_EXIT` | Ctrl+C 退出时是否停用规则以停止计费。 |
+| `HISTORY_ENABLED` | 是否启用历史抓取。 |
+| `HISTORY_RUN_ON_START` | 启动 `monitor.py` 前是否先跑一次历史增量补漏。 |
+| `HISTORY_MODE_ON_START` | 启动时历史模式，通常 `incremental`。 |
+| `HISTORY_X_CURL_DIR` | 存放 X GraphQL curl 文件的目录，默认 `../x_curl`。 |
+| `HISTORY_MAX_PAGES` | 每类时间线最大翻页数。 |
+| `HISTORY_PAUSE_SECONDS` | 翻页间隔，避免请求过快。 |
+| `LLM_URL` / `LLM_KEY` / `LLM_MODEL` | 任意 OpenAI 兼容 Chat Completions 接口、key、模型名。 |
+| `TRANSLATE_ENABLED` | 实时翻译开关。关闭后仍入库和桌面通知，但不翻译、不发翻译邮件。 |
+| `EMAIL_ENABLED` | 是否启用邮件。 |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` / `EMAIL_USE_TLS` | SMTP 主机、端口、是否 STARTTLS（Gmail：`smtp.gmail.com` / `587` / `true`）。 |
+| `EMAIL_USER` / `EMAIL_PASSWORD` | SMTP 账号与密码。**Gmail 必须用「应用专用密码 App Password」，不是登录密码。** |
+| `EMAIL_FROM` | 发件人地址。 |
+| `EMAIL_TO` | 收件人；多个用逗号分隔。 |
+| `NOTIFY_DESKTOP` / `NOTIFY_SOUND` | macOS 桌面通知与提示音开关。 |
+| `NOTIFY_TELEGRAM_ENABLED` / `NOTIFY_TELEGRAM_BOT_TOKEN` / `NOTIFY_TELEGRAM_CHAT_ID` | 可选 Telegram 通知。 |
+| `NOTIFY_WEBHOOK_ENABLED` / `NOTIFY_WEBHOOK_URL` | 可选 HTTP webhook。 |
 
-示例：
+### 准备 X GraphQL curl 文件
 
-```json
-"api_key": "YOUR_TWITTERAPI_IO_KEY"
-```
-
-也可以用环境变量覆盖：
-
-```bash
-export TWITTERAPI_KEY="YOUR_TWITTERAPI_IO_KEY"
-```
-
-### `watch`
-
-要监控的 X 账号和 filter rule 参数：
-
-```json
-"watch": {
-  "username": "TARGET_X_USERNAME",
-  "tag": "my_stock_watch",
-  "interval_seconds": 0.1
-}
-```
-
-- `username`: X 用户名，不带 `@`。
-- `tag`: twitterapi.io 规则标签，建议用项目唯一名称。
-- `interval_seconds`: twitterapi.io 规则间隔。保守使用默认值即可。
-
-### `rule_id`
-
-已存在的 twitterapi.io rule ID。首次使用可以留空，然后运行：
-
-```bash
-python rules.py ensure
-```
-
-程序会按 `watch.username` 和 `watch.tag` 创建或激活规则。
-
-### `db_path`
-
-SQLite 数据库路径：
-
-```json
-"db_path": "data/monitor.sqlite"
-```
-
-相对路径按项目目录解析。默认会自动创建 `data/monitor.sqlite`。
-
-### `history`
-
-历史回补配置：
-
-```json
-"history": {
-  "enabled": true,
-  "run_on_start": true,
-  "mode_on_start": "incremental",
-  "x_curl_dir": "../x_curl",
-  "max_pages": 200,
-  "pause_seconds": 0.8
-}
-```
-
-- `enabled`: 是否启用历史抓取。
-- `run_on_start`: 启动 `monitor.py` 前是否先跑一次历史增量补漏。
-- `mode_on_start`: 启动时历史模式，通常用 `incremental`。
-- `x_curl_dir`: 存放 X GraphQL curl 文件的目录。
-- `max_pages`: 每类时间线最多翻页数。
-- `pause_seconds`: 翻页间隔，避免请求过快。
-
-需要准备三个 curl 文件：
+历史抓取需要三个 curl 文件，放在 `HISTORY_X_CURL_DIR` 指向的目录：
 
 - `UserTweets.curl`
 - `UserTweetsAndReplies.curl`
@@ -149,85 +105,6 @@ SQLite 数据库路径：
 7. 分别保存为上面的 `.curl` 文件名。
 
 这些 curl 文件包含登录 cookie 和鉴权 header，切勿提交到 git，切勿公开分享。
-
-### `llm`
-
-任意 OpenAI 兼容 Chat Completions 接口：
-
-```json
-"llm": {
-  "url": "https://YOUR_LLM_HOST/v1/chat/completions",
-  "key": "YOUR_LLM_API_KEY",
-  "model": "YOUR_MODEL_NAME"
-}
-```
-
-- `url`: Chat Completions endpoint。
-- `key`: LLM API key。
-- `model`: 模型名。
-
-### `translate`
-
-实时翻译开关：
-
-```json
-"translate": {
-  "enabled": true
-}
-```
-
-关闭后实时新帖仍会入库和桌面通知，但不会调用 LLM 翻译，也不会发送翻译邮件。
-
-### `email`
-
-SMTP 邮件配置：
-
-```json
-"email": {
-  "enabled": true,
-  "smtp_host": "smtp.gmail.com",
-  "smtp_port": 587,
-  "use_tls": true,
-  "user": "YOUR_EMAIL_ACCOUNT",
-  "password": "YOUR_EMAIL_APP_PASSWORD",
-  "from": "YOUR_FROM_EMAIL",
-  "to": ["YOUR_TO_EMAIL_1", "YOUR_TO_EMAIL_2"]
-}
-```
-
-Gmail 示例说明：
-
-- `smtp_host`: `smtp.gmail.com`
-- `smtp_port`: `587`
-- `use_tls`: `true`
-- `password`: 使用 Gmail App Password / 应用专用密码，不是 Gmail 登录密码。
-
-如果邮件发送失败，程序只打印 warning，不会中断实时监控。
-
-### `notify`
-
-本地和外部通知配置：
-
-```json
-"notify": {
-  "desktop": true,
-  "sound": true,
-  "telegram": {
-    "enabled": false,
-    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
-    "chat_id": "YOUR_CHAT_ID"
-  },
-  "webhook": {
-    "enabled": false,
-    "url": "YOUR_WEBHOOK_URL"
-  }
-}
-```
-
-- `desktop`: macOS 桌面通知。
-- `sound`: 桌面通知声音。
-- `telegram`: 可选 Telegram 通知。
-- `webhook`: 可选 HTTP webhook。
 
 ## 运行
 
@@ -281,7 +158,7 @@ python rules.py deactivate
 
 - 同一 twitterapi.io key 同时只能有一个 WebSocket 连接。
 - `x_curl` cookie 会过期，抓取失败时需要重新从浏览器复制 curl。
-- curl 文件含 cookie，`config.json` 含密钥和密码，切勿提交到 git。
+- curl 文件含 cookie，`.env` 含密钥和密码，切勿提交到 git。
 - 本项目用于研究、跟踪和可视化，不构成投资建议。
 - 股票提及不等于买入、卖出或持有建议。请自行判断风险。
 
@@ -323,8 +200,8 @@ Unified data flow:
 - `email_sender.py`: SMTP / STARTTLS email sending.
 - `rules.py`: twitterapi.io tweet filter rule management.
 - `notify.py`: Desktop, Telegram, webhook, and terminal notifications.
-- `config.py`: Loads `config.json` and supports API key override by environment variable.
-- `config.example.json`: Safe configuration template with no real secrets.
+- `config.py`: Loads configuration from `.env` into the structure the app uses.
+- `.env.example`: Safe configuration template with no real secrets.
 - `requirements.txt`: Python dependencies.
 
 ## Installation
@@ -339,89 +216,45 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Copy the template first:
+This project uses a `.env` file for configuration. Copy the template first:
 
 ```bash
-cp config.example.json config.json
+cp .env.example .env
 ```
 
-Then edit `config.json`. This file contains API keys, LLM keys, SMTP passwords, and X curl file paths. It is ignored by `.gitignore`. Never commit, upload, or share it.
+Then edit `.env`. This file contains the twitterapi.io key, LLM key, SMTP password, and other secrets. It is ignored by `.gitignore`. Never commit, upload, or share it.
 
-### `api_key`
+Environment variables:
 
-Your twitterapi.io API key. Register on twitterapi.io and copy the key from its dashboard.
+| Variable | Description |
+|---|---|
+| `TWITTERAPI_KEY` | Your twitterapi.io API key (from its dashboard). A real environment variable of the same name overrides the `.env` value. |
+| `WATCH_USERNAME` | The X username to monitor, without `@`. |
+| `WATCH_TAG` | twitterapi.io rule tag. Use a project-specific unique name. |
+| `WATCH_INTERVAL_SECONDS` | Rule check interval. The default `0.1` is usually fine. |
+| `RULE_ID` | Existing rule ID. Leave empty on first use; `python rules.py ensure` creates one. |
+| `DB_PATH` | SQLite path, default `data/monitor.sqlite` (relative to the module directory). |
+| `DEACTIVATE_ON_EXIT` | Whether Ctrl+C deactivates the rule to stop billing. |
+| `HISTORY_ENABLED` | Enable historical fetching. |
+| `HISTORY_RUN_ON_START` | Run an incremental history catch-up before `monitor.py` connects. |
+| `HISTORY_MODE_ON_START` | Startup history mode, usually `incremental`. |
+| `HISTORY_X_CURL_DIR` | Directory containing X GraphQL curl files, default `../x_curl`. |
+| `HISTORY_MAX_PAGES` | Maximum pages per timeline source. |
+| `HISTORY_PAUSE_SECONDS` | Pause between pages to avoid excessive request rate. |
+| `LLM_URL` / `LLM_KEY` / `LLM_MODEL` | Any OpenAI-compatible Chat Completions endpoint, key, and model name. |
+| `TRANSLATE_ENABLED` | Real-time translation switch. If off, posts are still stored and notified, but not translated/emailed. |
+| `EMAIL_ENABLED` | Enable email. |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` / `EMAIL_USE_TLS` | SMTP host, port, STARTTLS (Gmail: `smtp.gmail.com` / `587` / `true`). |
+| `EMAIL_USER` / `EMAIL_PASSWORD` | SMTP account and password. **Gmail requires an App Password, not your login password.** |
+| `EMAIL_FROM` | Sender address. |
+| `EMAIL_TO` | Recipients; separate multiple with commas. |
+| `NOTIFY_DESKTOP` / `NOTIFY_SOUND` | macOS desktop notification and sound switches. |
+| `NOTIFY_TELEGRAM_ENABLED` / `NOTIFY_TELEGRAM_BOT_TOKEN` / `NOTIFY_TELEGRAM_CHAT_ID` | Optional Telegram notifications. |
+| `NOTIFY_WEBHOOK_ENABLED` / `NOTIFY_WEBHOOK_URL` | Optional HTTP webhook. |
 
-Example:
+### Prepare X GraphQL curl files
 
-```json
-"api_key": "YOUR_TWITTERAPI_IO_KEY"
-```
-
-You can also override it with an environment variable:
-
-```bash
-export TWITTERAPI_KEY="YOUR_TWITTERAPI_IO_KEY"
-```
-
-### `watch`
-
-The X account and filter rule parameters:
-
-```json
-"watch": {
-  "username": "TARGET_X_USERNAME",
-  "tag": "my_stock_watch",
-  "interval_seconds": 0.1
-}
-```
-
-- `username`: X username without `@`.
-- `tag`: twitterapi.io rule tag. Use a project-specific unique name.
-- `interval_seconds`: twitterapi.io rule interval. The default is usually fine.
-
-### `rule_id`
-
-An existing twitterapi.io rule ID. You may leave it empty on first use, then run:
-
-```bash
-python rules.py ensure
-```
-
-The script will create or activate a rule based on `watch.username` and `watch.tag`.
-
-### `db_path`
-
-SQLite database path:
-
-```json
-"db_path": "data/monitor.sqlite"
-```
-
-Relative paths are resolved from this project directory. `data/monitor.sqlite` is created automatically by default.
-
-### `history`
-
-Historical backfill configuration:
-
-```json
-"history": {
-  "enabled": true,
-  "run_on_start": true,
-  "mode_on_start": "incremental",
-  "x_curl_dir": "../x_curl",
-  "max_pages": 200,
-  "pause_seconds": 0.8
-}
-```
-
-- `enabled`: Enable historical fetching.
-- `run_on_start`: Run an incremental history catch-up before `monitor.py` connects to WebSocket.
-- `mode_on_start`: Startup history mode. Usually `incremental`.
-- `x_curl_dir`: Directory containing X GraphQL curl files.
-- `max_pages`: Maximum pages per timeline source.
-- `pause_seconds`: Pause between pages to avoid excessive request rate.
-
-You need three curl files:
+Historical fetching needs three curl files in the `HISTORY_X_CURL_DIR` directory:
 
 - `UserTweets.curl`
 - `UserTweetsAndReplies.curl`
@@ -438,85 +271,6 @@ How to copy them:
 7. Save each request using the file names above.
 
 These curl files contain login cookies and auth headers. Never commit or share them.
-
-### `llm`
-
-Any OpenAI-compatible Chat Completions API:
-
-```json
-"llm": {
-  "url": "https://YOUR_LLM_HOST/v1/chat/completions",
-  "key": "YOUR_LLM_API_KEY",
-  "model": "YOUR_MODEL_NAME"
-}
-```
-
-- `url`: Chat Completions endpoint.
-- `key`: LLM API key.
-- `model`: Model name.
-
-### `translate`
-
-Real-time translation switch:
-
-```json
-"translate": {
-  "enabled": true
-}
-```
-
-If disabled, real-time posts are still stored and desktop notifications still work, but no LLM translation or translated email will be sent.
-
-### `email`
-
-SMTP email configuration:
-
-```json
-"email": {
-  "enabled": true,
-  "smtp_host": "smtp.gmail.com",
-  "smtp_port": 587,
-  "use_tls": true,
-  "user": "YOUR_EMAIL_ACCOUNT",
-  "password": "YOUR_EMAIL_APP_PASSWORD",
-  "from": "YOUR_FROM_EMAIL",
-  "to": ["YOUR_TO_EMAIL_1", "YOUR_TO_EMAIL_2"]
-}
-```
-
-Gmail notes:
-
-- `smtp_host`: `smtp.gmail.com`
-- `smtp_port`: `587`
-- `use_tls`: `true`
-- `password`: use a Gmail App Password, not your normal Gmail login password.
-
-If email sending fails, the program prints a warning and keeps the real-time monitor running.
-
-### `notify`
-
-Local and external notification settings:
-
-```json
-"notify": {
-  "desktop": true,
-  "sound": true,
-  "telegram": {
-    "enabled": false,
-    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
-    "chat_id": "YOUR_CHAT_ID"
-  },
-  "webhook": {
-    "enabled": false,
-    "url": "YOUR_WEBHOOK_URL"
-  }
-}
-```
-
-- `desktop`: macOS desktop notifications.
-- `sound`: Desktop notification sound.
-- `telegram`: Optional Telegram notifications.
-- `webhook`: Optional HTTP webhook.
 
 ## Usage
 
@@ -570,6 +324,6 @@ python rules.py deactivate
 
 - A single twitterapi.io key can have only one active WebSocket connection at a time.
 - `x_curl` cookies expire. Copy fresh curl commands from your browser when historical fetching fails.
-- curl files contain cookies, and `config.json` contains secrets and passwords. Never commit them to git.
+- curl files contain cookies, and `.env` contains secrets and passwords. Never commit them to git.
 - This project is for research, tracking, and visualization only. It is not investment advice.
 - Stock mentions are not buy, sell, or hold recommendations. Evaluate risks independently.

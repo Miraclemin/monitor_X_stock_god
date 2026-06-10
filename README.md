@@ -86,6 +86,39 @@ cp .env.example .env
 | `NOTIFY_TELEGRAM_ENABLED` / `NOTIFY_TELEGRAM_BOT_TOKEN` / `NOTIFY_TELEGRAM_CHAT_ID` | 可选 Telegram 通知。 |
 | `NOTIFY_WEBHOOK_ENABLED` / `NOTIFY_WEBHOOK_URL` | 可选 HTTP webhook。 |
 
+### 各项凭据如何获取
+
+**1. twitterapi.io API key（`TWITTERAPI_KEY`）**
+
+1. 打开 https://twitterapi.io/ 注册并登录。
+2. 在控制台（Dashboard）复制你的 API Key。
+3. 充值少量额度即可（实时监控单个账号通常每月几美分）。
+4. 填入 `.env` 的 `TWITTERAPI_KEY`。
+
+**2. 大模型翻译（`LLM_URL` / `LLM_KEY` / `LLM_MODEL`）**
+
+- 支持任意 OpenAI 兼容的 Chat Completions 接口。
+- `LLM_URL`：接口地址，形如 `https://你的服务/v1/chat/completions`。
+- `LLM_KEY`：该服务的 API key。
+- `LLM_MODEL`：模型名，例如 `claude-opus-4-6`、`gpt-4o` 等。
+- 不需要翻译时设 `TRANSLATE_ENABLED=false`，实时帖仍入库和桌面通知，但不翻译、不发翻译邮件。
+
+**3. 邮件（以 Gmail 为例）**
+
+1. 登录 Google 账号，先开启「两步验证」（必须）。
+2. 访问 https://myaccount.google.com/apppasswords 生成 16 位「应用专用密码 App Password」。
+3. 填入 `.env`：
+   - `EMAIL_SMTP_HOST=smtp.gmail.com`、`EMAIL_SMTP_PORT=587`、`EMAIL_USE_TLS=true`
+   - `EMAIL_USER` 和 `EMAIL_FROM`：你的 Gmail 地址
+   - `EMAIL_PASSWORD`：上一步的 16 位应用专用密码（**不是** Gmail 登录密码）
+   - `EMAIL_TO`：收件人，多个用逗号分隔
+- 其他邮箱（163 / QQ 等）同理：换成对应 SMTP 主机和端口，密码用邮箱的「授权码」。
+
+**4. 监控目标与规则（`WATCH_USERNAME` / `RULE_ID`）**
+
+- `WATCH_USERNAME`：要监控的 X 用户名，不带 `@`。
+- `RULE_ID` 首次留空。运行 `python rules.py ensure` 会自动创建并激活规则并打印 rule_id；把它填回 `.env` 可复用。
+
 ### 准备 X GraphQL curl 文件
 
 历史抓取需要三个 curl 文件，放在 `HISTORY_X_CURL_DIR` 指向的目录：
@@ -251,6 +284,39 @@ Environment variables:
 | `NOTIFY_DESKTOP` / `NOTIFY_SOUND` | macOS desktop notification and sound switches. |
 | `NOTIFY_TELEGRAM_ENABLED` / `NOTIFY_TELEGRAM_BOT_TOKEN` / `NOTIFY_TELEGRAM_CHAT_ID` | Optional Telegram notifications. |
 | `NOTIFY_WEBHOOK_ENABLED` / `NOTIFY_WEBHOOK_URL` | Optional HTTP webhook. |
+
+### How To Get Each Credential
+
+**1. twitterapi.io API key (`TWITTERAPI_KEY`)**
+
+1. Sign up and log in at https://twitterapi.io/.
+2. Copy your API Key from the dashboard.
+3. Add a small amount of credit (monitoring one account is usually a few cents per month).
+4. Put it in `TWITTERAPI_KEY` in `.env`.
+
+**2. LLM translation (`LLM_URL` / `LLM_KEY` / `LLM_MODEL`)**
+
+- Any OpenAI-compatible Chat Completions API works.
+- `LLM_URL`: endpoint such as `https://your-host/v1/chat/completions`.
+- `LLM_KEY`: API key for that service.
+- `LLM_MODEL`: model name, e.g. `claude-opus-4-6`, `gpt-4o`, etc.
+- Set `TRANSLATE_ENABLED=false` to skip translation; posts are still stored and notified.
+
+**3. Email (Gmail example)**
+
+1. Enable 2-Step Verification on your Google account first (required).
+2. Generate a 16-character App Password at https://myaccount.google.com/apppasswords.
+3. Fill in `.env`:
+   - `EMAIL_SMTP_HOST=smtp.gmail.com`, `EMAIL_SMTP_PORT=587`, `EMAIL_USE_TLS=true`
+   - `EMAIL_USER` and `EMAIL_FROM`: your Gmail address
+   - `EMAIL_PASSWORD`: the 16-character App Password (NOT your Gmail login password)
+   - `EMAIL_TO`: recipients, comma-separated for multiple
+- Other providers (e.g. Outlook, QQ, 163) work the same way with their SMTP host/port and an app/authorization password.
+
+**4. Watch target and rule (`WATCH_USERNAME` / `RULE_ID`)**
+
+- `WATCH_USERNAME`: the X username to monitor, without `@`.
+- Leave `RULE_ID` empty at first. Running `python rules.py ensure` creates and activates the rule and prints its rule_id; put it back into `.env` to reuse it.
 
 ### Prepare X GraphQL curl files
 

@@ -30,6 +30,7 @@ def send_email(subject, body_text, body_html=None):
                 smtp.starttls()
             smtp.login(settings["user"], settings["password"])
             smtp.send_message(msg)
+        print(f"email sent: recipients={len(recipients)} subject={subject}")
         return True
     except Exception as exc:
         print(f"email warning: {exc}")

@@ -25,11 +25,13 @@ class Monitor:
         self.rule_id = None
         self.processed_ids = set()
         self.ws = None
+        self._shutting_down = False
 
     def run(self):
         self._activate_rule()
         self._run_history()
         signal.signal(signal.SIGINT, self._shutdown)
+        signal.signal(signal.SIGTERM, self._shutdown)
         self.ws = websocket.WebSocketApp(
             WS_URL,
             header=[f"x-api-key: {self.config['api_key']}"],
@@ -133,10 +135,17 @@ class Monitor:
         print(f"WebSocket closed: code={close_status_code} msg={close_msg}")
 
     def _shutdown(self, signum, frame):
+        if self._shutting_down:
+            return
+        self._shutting_down = True
         print("\nStopping monitor...")
         if self.config.get("deactivate_on_exit") and self.rule_id:
-            RuleManager(self.config["api_key"]).deactivate(self.rule_id)
-            print(f"Rule deactivated: {self.rule_id}")
+            try:
+                RuleManager(self.config["api_key"]).deactivate(self.rule_id)
+                print(f"Rule deactivated: {self.rule_id}")
+            except Exception as exc:
+                print(f"⚠️ deactivate failed: {exc}")
+                print(f"   请手动执行: python rules.py deactivate {self.rule_id}")
         if self.ws:
             self.ws.close()
         sys.exit(0)

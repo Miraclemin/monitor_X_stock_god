@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import requests
 
@@ -38,7 +39,10 @@ class RuleManager:
         }
         resp = self.session.post(f"{REST_BASE}/oapi/tweet_filter/update_rule", json=payload, timeout=20)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if data.get("status") != "success":
+            raise RuntimeError(f"update_rule failed: {data}")
+        return data
 
     def ensure_active(self, tag, value, interval):
         for rule in self.list_rules():
@@ -51,15 +55,25 @@ class RuleManager:
         self.update_rule(rule_id, tag, value, interval, 1)
         return rule_id
 
-    def deactivate(self, rule_id):
-        rule = self._find_rule(rule_id)
-        return self.update_rule(
-            rule_id,
-            rule.get("tag"),
-            rule.get("value"),
-            rule.get("interval_seconds"),
-            0,
-        )
+    def deactivate(self, rule_id, retries=3):
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                rule = self._find_rule(rule_id)
+                if not rule.get("is_effect"):
+                    return {"status": "success", "msg": "already inactive"}
+                return self.update_rule(
+                    rule_id,
+                    rule.get("tag"),
+                    rule.get("value"),
+                    rule.get("interval_seconds"),
+                    0,
+                )
+            except Exception as exc:
+                last_exc = exc
+                if attempt < retries - 1:
+                    time.sleep(2 * (attempt + 1))
+        raise last_exc
 
     def delete(self, rule_id):
         try:

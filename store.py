@@ -120,6 +120,52 @@ def get_translation(tweet_id):
     return row["text_zh"]
 
 
+def load_recent_main_tweets(limit=20):
+    with connect() as con:
+        rows = con.execute(
+            """
+            select tweet_id, source, author_id, author_screen_name, created_at, text, url,
+                   favorite_count, reply_count, retweet_count, quote_count, raw_json, text_zh
+            from tweets
+            order by created_at desc
+            limit ?
+            """,
+            (limit * 5,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            if row["source"] == "replies":
+                continue
+            raw = _loads_json(row["raw_json"])
+            if _is_reply_raw(raw):
+                continue
+            symbols = [
+                item["symbol"]
+                for item in con.execute(
+                    "select symbol from mentions where tweet_id=? order by id",
+                    (row["tweet_id"],),
+                ).fetchall()
+            ]
+            result.append(
+                {
+                    "tweet": {
+                        "tweet_id": row["tweet_id"],
+                        "author_id": row["author_id"],
+                        "author_screen_name": row["author_screen_name"],
+                        "created_at": row["created_at"],
+                        "text": row["text"],
+                        "url": row["url"],
+                    },
+                    "symbols": symbols,
+                    "translation": row["text_zh"] or "",
+                    "source": row["source"],
+                }
+            )
+            if len(result) >= limit:
+                break
+    return result
+
+
 def _save_row(row, symbols, mentioned_at, source):
     with connect() as con:
         cur = con.execute(
@@ -191,6 +237,13 @@ def _is_reply_raw(raw):
         legacy.get("in_reply_to_user_id_str"),
     )
     return any(value not in (None, "", False) for value in reply_fields)
+
+
+def _loads_json(text):
+    try:
+        return json.loads(text or "{}")
+    except json.JSONDecodeError:
+        return {}
 
 
 def _utc_now():

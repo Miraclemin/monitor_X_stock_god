@@ -11,7 +11,7 @@ from config import load_config
 from email_sender import send_email
 from notify import notify
 from rules import RuleManager
-from store import get_translation, normalize_tweet, save_tweet, update_translation
+from store import get_translation, load_recent_main_tweets, normalize_tweet, save_tweet, update_translation
 
 
 translate_module = importlib.import_module("translate")
@@ -76,6 +76,7 @@ class Monitor:
     def run(self):
         self._activate_rule()
         self._run_history()
+        self._send_startup_digest_from_db()
         signal.signal(signal.SIGINT, self._shutdown)
         signal.signal(signal.SIGTERM, self._shutdown)
         self.ws = websocket.WebSocketApp(
@@ -175,6 +176,25 @@ class Monitor:
             return False
         self._startup_batch_handled = True
         return True
+
+    def _send_startup_digest_from_db(self):
+        rows = load_recent_main_tweets(STARTUP_BATCH_SIZE)
+        if not rows:
+            return
+        items = []
+        for index, row in enumerate(rows, start=1):
+            items.append(
+                {
+                    "index": index,
+                    "tweet": row["tweet"],
+                    "symbols": row["symbols"],
+                    "translation": row["translation"],
+                    "is_new": False,
+                }
+            )
+        self._translate_startup_items(items)
+        self._send_startup_batch_email(items, len(items))
+        self._startup_batch_handled = True
 
     def _handle_startup_batch(self, raw_tweets, event_type):
         items = []

@@ -77,6 +77,7 @@ def normalize_tweet(raw, event_type):
         "quote_count": int(raw.get("quoteCount") or 0),
         "entities": raw.get("entities") or {},
         "snow_delay_ms": raw.get("snow_delay_ms"),
+        "is_reply": _is_reply_raw(raw),
         "raw_json": json.dumps(raw, ensure_ascii=False, separators=(",", ":")),
     }
 
@@ -177,6 +178,19 @@ def _created_at(raw):
         return None
     created = dt.datetime.fromtimestamp(int(created_ms) / 1000, tz=dt.timezone.utc)
     return created.isoformat().replace("+00:00", "Z")
+
+
+def _is_reply_raw(raw):
+    legacy = raw.get("legacy") or {}
+    reply_fields = (
+        raw.get("isReply"),
+        raw.get("inReplyToId"),
+        raw.get("in_reply_to_status_id_str"),
+        raw.get("in_reply_to_user_id_str"),
+        legacy.get("in_reply_to_status_id_str"),
+        legacy.get("in_reply_to_user_id_str"),
+    )
+    return any(value not in (None, "", False) for value in reply_fields)
 
 
 def _utc_now():

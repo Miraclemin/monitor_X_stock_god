@@ -4,7 +4,7 @@ from email.message import EmailMessage
 from config import load_config
 
 
-def send_email(subject, body_text):
+def send_email(subject, body_text, body_html=None):
     settings = (load_config().get("email") or {})
     if not settings.get("enabled"):
         return False
@@ -21,6 +21,8 @@ def send_email(subject, body_text):
     msg["From"] = settings.get("from") or settings.get("user")
     msg["To"] = ", ".join(recipients)
     msg.set_content(body_text or "")
+    if body_html:
+        msg.add_alternative(body_html, subtype="html")
 
     try:
         with smtplib.SMTP(settings["smtp_host"], int(settings.get("smtp_port", 587)), timeout=30) as smtp:

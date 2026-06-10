@@ -187,6 +187,28 @@ python rules.py deactivate
 - LLM 翻译：按你的模型服务商规则计费。
 - 邮件：通常由 SMTP 服务商限制配额，不由本项目计费。
 
+## 停止计费 / 关闭规则
+
+twitterapi.io 的计费发生在服务端：只要规则处于激活状态（`is_effect=1`，ON_AIR），就会对匹配到的新帖计费，**和本地程序是否在运行无关**。所以「关掉程序」不等于「停止计费」。
+
+停止计费 = 把规则停用（`is_effect=0`）：
+
+```bash
+python rules.py deactivate
+```
+
+几种情况：
+
+- **正常退出自动停**：`.env` 里设 `DEACTIVATE_ON_EXIT=true` 时，用 `Ctrl+C`（SIGINT）或 `kill <pid>`（SIGTERM）退出会自动停用规则。
+- **强杀 / 断电 / 崩溃**（`kill -9`、关机等）：不会自动停用，需事后手动执行上面的命令。
+- **确认是否真的停了**：
+
+```bash
+python rules.py list   # 看到 is_effect=0 才算真的停止计费
+```
+
+> 提示：计费按匹配到的真实新帖计算。监控发帖不频繁的账号时，即使规则短时间空开着，费用也极低；需要彻底零计费时再 `deactivate` 即可。重新使用时运行 `python monitor.py` 或 `python rules.py ensure` 会自动重新激活。
+
 ## 注意事项与免责声明
 
 - 同一 twitterapi.io key 同时只能有一个 WebSocket 连接。
@@ -385,6 +407,28 @@ python rules.py deactivate
 - Real-time WebSocket: twitterapi.io charges by matched tweet. Monitoring a small number of accounts is usually low cost.
 - LLM translation: charged by your model provider.
 - Email: usually subject to SMTP provider quota, not charged by this project.
+
+## Stop Billing / Deactivate The Rule
+
+twitterapi.io billing happens server-side: as long as the rule is active (`is_effect=1`, ON_AIR) it is billed for matched posts, **regardless of whether the local program is running**. So "closing the program" is NOT the same as "stopping billing".
+
+Stop billing = deactivate the rule (`is_effect=0`):
+
+```bash
+python rules.py deactivate
+```
+
+Cases:
+
+- **Auto-stop on normal exit**: when `DEACTIVATE_ON_EXIT=true` in `.env`, exiting with `Ctrl+C` (SIGINT) or `kill <pid>` (SIGTERM) deactivates the rule automatically.
+- **Hard kill / power loss / crash** (`kill -9`, shutdown, etc.): will NOT auto-deactivate; run the command above afterwards.
+- **Confirm it actually stopped**:
+
+```bash
+python rules.py list   # is_effect=0 means billing is really stopped
+```
+
+> Note: billing is per matched real post. For an account that posts infrequently, even leaving the rule active briefly costs very little. Deactivate when you want zero billing. Running `python monitor.py` or `python rules.py ensure` re-activates it.
 
 ## Notes And Disclaimer
 

@@ -48,6 +48,8 @@ class RuleManager:
         for rule in self.list_rules():
             if rule.get("tag") == tag:
                 rule_id = rule["rule_id"]
+                if _rule_matches(rule, tag, value, interval) and _is_effective(rule):
+                    return rule_id
                 self.update_rule(rule_id, tag, value, interval, 1)
                 return rule_id
 
@@ -60,7 +62,7 @@ class RuleManager:
         for attempt in range(retries):
             try:
                 rule = self._find_rule(rule_id)
-                if not rule.get("is_effect"):
+                if not _is_effective(rule):
                     return {"status": "success", "msg": "already inactive"}
                 return self.update_rule(
                     rule_id,
@@ -92,6 +94,26 @@ class RuleManager:
             if rule.get("rule_id") == rule_id:
                 return rule
         raise RuntimeError(f"rule not found: {rule_id}")
+
+
+def _rule_matches(rule, tag, value, interval):
+    try:
+        rule_interval = float(rule.get("interval_seconds"))
+    except (TypeError, ValueError):
+        return False
+
+    return (
+        rule.get("tag") == tag
+        and rule.get("value") == value
+        and abs(rule_interval - float(interval)) < 0.001
+    )
+
+
+def _is_effective(rule):
+    value = rule.get("is_effect")
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on_air"}
+    return bool(value)
 
 
 def _print_rules(rules):

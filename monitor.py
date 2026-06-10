@@ -13,7 +13,8 @@ from rules import RuleManager
 from store import get_translation, normalize_tweet, save_tweet, update_translation
 
 
-translate_text = importlib.import_module("translate").translate_text
+translate_module = importlib.import_module("translate")
+translate_text = translate_module.translate_text
 
 
 WS_URL = "wss://ws.twitterapi.io/twitter/tweet/websocket"
@@ -142,23 +143,43 @@ class Monitor:
             if not is_new:
                 print(f"duplicate tweet_id={tweet_id}")
 
-            zh = get_translation(tweet_id)
-            if not zh:
-                zh = translate_text(tweet.get("text") or "")
-            if zh:
-                update_translation(tweet_id, zh)
-
             items.append(
                 {
                     "index": index,
                     "tweet": tweet,
                     "symbols": symbols,
-                    "translation": zh or "（翻译失败，保留原文）",
+                    "translation": get_translation(tweet_id) or "",
                     "is_new": is_new,
                 }
             )
 
+        self._translate_startup_items(items)
         self._send_startup_batch_email(items, len(raw_tweets))
+
+    def _translate_startup_items(self, items):
+        pending = [item for item in items if not item["translation"]]
+        if not pending:
+            return
+
+        head = (
+            "你是金融/半导体领域的中英翻译。把下面每一条英文推文翻成自然流畅的简体中文。"
+            "保留 $股票代码、数字、公司/产品专名不译，术语用业内译法（CPO=共封装光学、InP=磷化铟、HBM 保留等）。\n"
+            "输出格式：对每条，先单独一行写 @@@该条的id@@@，下一行起写中文译文（可多行），再写下一条。"
+            "除此之外不要输出任何多余文字或代码块标记。\n\n"
+        )
+        body = "".join(f"@@@{item['tweet']['tweet_id']}@@@\n{item['tweet']['text']}\n\n" for item in pending)
+        try:
+            translated = translate_module.parse_marked(translate_module.chat(head + body))
+        except Exception as exc:
+            print(f"startup batch translate warning: {exc}")
+            return
+
+        for item in pending:
+            tweet_id = item["tweet"]["tweet_id"]
+            zh = translated.get(str(tweet_id))
+            if zh:
+                item["translation"] = zh
+                update_translation(tweet_id, zh)
 
     def _send_startup_batch_email(self, items, raw_count):
         watch = self.config["watch"]
@@ -181,7 +202,7 @@ class Monitor:
                 f"--- #{item['index']} {symbol_text} / {status} ---\n"
                 f"时间：{tweet.get('created_at') or '-'}\n"
                 f"原帖：{tweet.get('url') or ''}\n"
-                f"【中文翻译】\n{item['translation']}\n\n"
+                f"【中文翻译】\n{item['translation'] or '（翻译失败，保留原文）'}\n\n"
                 f"【原文】\n{tweet.get('text') or ''}\n"
             )
         send_email(subject, "\n".join(sections))

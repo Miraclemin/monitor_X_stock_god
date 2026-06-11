@@ -169,6 +169,16 @@ x_curl/
 python add_user_curl.py 新账号用户名
 ```
 
+**模板是什么、放在哪**：
+
+- 没有专门的模板目录。你**第一个**手工从 DevTools 复制的账号目录（例如 `x_curl/aleabitoreddit/`）就是模板，和其他账号目录放在一起。
+- `add_user_curl.py` 按 `WATCH_USERNAMES` 的顺序，自动选第一个目录下有 curl 文件的账号当模板；也可用 `--from 账号名` 手动指定。运行结束会打印实际用了哪个模板（如 `完成（模板：aleabitoreddit，3 个文件）`）。
+
+**模板需要定期更新（重要）**：
+
+- curl 文件里的登录 cookie 会过期。过期后**所有账号**的历史抓取一起失效（它们克隆自同一份 cookie），表现为 `history.py` / 启动回补在日志里报 401 / 鉴权类错误；实时监控不受影响。
+- 更新方法：按上面的"复制方法"重新从 DevTools 复制一份模板账号的 curl 覆盖旧文件，然后删掉其他账号的目录、重跑 `python add_user_curl.py 账号名` 重新克隆。
+
 复制方法：
 
 1. 在 Chrome 登录 X。
@@ -431,6 +441,16 @@ x_curl/
 ```bash
 python add_user_curl.py <new_username>
 ```
+
+**What the template is and where it lives:**
+
+- There is no dedicated template directory. The **first** account directory you copy by hand from DevTools (e.g. `x_curl/aleabitoreddit/`) is the template, sitting alongside the other account directories.
+- `add_user_curl.py` walks `WATCH_USERNAMES` in order and picks the first account whose directory contains curl files; use `--from <account>` to pick one explicitly. The script prints which template it used (e.g. `完成（模板：aleabitoreddit，3 个文件）`).
+
+**The template needs periodic refreshing (important):**
+
+- The login cookies inside curl files expire. When they do, history fetching fails for **all** accounts at once (the clones share the same cookies) — `history.py` / startup backfill logs 401 / auth errors. Real-time monitoring is unaffected.
+- To refresh: re-copy the template account's curl files from DevTools following the steps above, delete the other account directories, and re-run `python add_user_curl.py <account>` for each.
 
 How to copy them:
 

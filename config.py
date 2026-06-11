@@ -37,12 +37,17 @@ def _list(name):
     return [x.strip() for x in os.environ.get(name, "").split(",") if x.strip()]
 
 
+def _usernames():
+    names = _list("WATCH_USERNAMES") or _list("WATCH_USERNAME")
+    return names or ["aleabitoreddit"]
+
+
 def load_config():
     """Load config from .env into the nested dict shape the rest of the app expects."""
     return {
         "api_key": _str("TWITTERAPI_KEY"),
         "watch": {
-            "username": _str("WATCH_USERNAME", "aleabitoreddit"),
+            "usernames": _usernames(),
             "tag": _str("WATCH_TAG", "serenity_stock_god"),
             "interval_seconds": _float("WATCH_INTERVAL_SECONDS", 60),
         },
@@ -56,6 +61,7 @@ def load_config():
             "x_curl_dir": _str("HISTORY_X_CURL_DIR", "../x_curl"),
             "max_pages": _int("HISTORY_MAX_PAGES", 200),
             "pause_seconds": _float("HISTORY_PAUSE_SECONDS", 0.8),
+            "max_months": _int("HISTORY_MAX_MONTHS", 0),
         },
         "llm": {
             "url": _str("LLM_URL"),

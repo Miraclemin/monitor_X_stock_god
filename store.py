@@ -120,18 +120,19 @@ def get_translation(tweet_id):
     return row["text_zh"]
 
 
-def load_recent_main_tweets(limit=20):
+def load_recent_main_tweets(limit=20, username=None):
+    sql = (
+        "select tweet_id, source, author_id, author_screen_name, created_at, text, url, "
+        "favorite_count, reply_count, retweet_count, quote_count, raw_json, text_zh from tweets"
+    )
+    params = []
+    if username:
+        sql += " where lower(author_screen_name) = lower(?)"
+        params.append(username)
+    sql += " order by created_at desc limit ?"
+    params.append(limit * 5)
     with connect() as con:
-        rows = con.execute(
-            """
-            select tweet_id, source, author_id, author_screen_name, created_at, text, url,
-                   favorite_count, reply_count, retweet_count, quote_count, raw_json, text_zh
-            from tweets
-            order by created_at desc
-            limit ?
-            """,
-            (limit * 5,),
-        ).fetchall()
+        rows = con.execute(sql, params).fetchall()
         result = []
         for row in rows:
             if row["source"] == "replies":

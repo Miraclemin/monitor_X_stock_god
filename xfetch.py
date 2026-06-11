@@ -10,7 +10,6 @@ from extract import extract_symbols, parse_x_date
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
-TARGET_USER_ID = "1940360837547565056"
 X_CURL_DIR = PROJECT_ROOT / "x_curl"
 CURL_FILES = {
     "posts": "UserTweets.curl",
@@ -25,6 +24,15 @@ def parse_curl(path: Path):
     if not args or args[0] != "curl":
         raise ValueError(f"{path} is not a curl command")
     return args
+
+
+def curl_user_id(curl_path: Path) -> str:
+    """从 curl 文件 URL 的 variables 中解析目标账号的 userId。"""
+    args = parse_curl(curl_path)
+    parts = urllib.parse.urlsplit(args[1])
+    qs = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
+    variables = json.loads(qs.get("variables", ["{}"])[0])
+    return str(variables.get("userId") or "")
 
 
 def set_cursor(url: str, cursor: str | None) -> str:
@@ -69,13 +77,13 @@ def find_bottom_cursor(data):
     return None
 
 
-def normalize_tweet(node):
+def normalize_tweet(node, target_user_id, fallback_screen_name=""):
     if node.get("__typename") != "Tweet" or "legacy" not in node:
         return None
     legacy = node.get("legacy", {})
     core_user = (((node.get("core") or {}).get("user_results") or {}).get("result") or {})
     author_id = core_user.get("rest_id") or legacy.get("user_id_str")
-    if author_id != TARGET_USER_ID:
+    if author_id != target_user_id:
         return None
     tweet_id = legacy.get("id_str") or node.get("rest_id")
     if not tweet_id:
@@ -84,7 +92,7 @@ def normalize_tweet(node):
     text = note.get("text") or legacy.get("full_text") or ""
     text = html.unescape(text)
     created_at = parse_x_date(legacy.get("created_at"))
-    screen = (((core_user.get("core") or {}).get("screen_name")) or "aleabitoreddit")
+    screen = (((core_user.get("core") or {}).get("screen_name")) or fallback_screen_name)
     return {
         "tweet_id": tweet_id,
         "author_id": author_id,

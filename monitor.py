@@ -15,11 +15,11 @@ from store import get_translation, load_recent_main_tweets, normalize_tweet, sav
 
 
 translate_module = importlib.import_module("translate")
-translate_text = translate_module.translate_text
 
 
 WS_URL = "wss://ws.twitterapi.io/twitter/tweet/websocket"
 STARTUP_BATCH_SIZE = 20
+STARTUP_PER_USER = 5
 SYMBOL_NAMES = {
     "AAOI": "Applied Optoelectronics",
     "AAPL": "Apple",
@@ -100,6 +100,7 @@ class Monitor:
                 x_curl_dir=settings.get("x_curl_dir"),
                 max_pages=int(settings.get("max_pages", 200)),
                 pause=float(settings.get("pause_seconds", 0.8)),
+                max_months=int(settings.get("max_months", 0)),
             )
             print(f"History complete: {result}")
         except Exception as exc:
@@ -107,7 +108,7 @@ class Monitor:
 
     def _activate_rule(self):
         watch = self.config["watch"]
-        value = f"from:{watch['username']}"
+        value = " OR ".join(f"from:{name}" for name in watch["usernames"])
         manager = RuleManager(self.config["api_key"])
         self.rule_id = manager.ensure_active(watch["tag"], value, watch["interval_seconds"])
         print(f"Rule active: {self.rule_id} tag={watch['tag']} value={value}")
@@ -132,21 +133,20 @@ class Monitor:
             if self._is_startup_batch(tweets):
                 self._handle_startup_batch(tweets, event_type)
                 return
-            for tweet in tweets:
-                self._handle_tweet(tweet, event_type)
+            self._handle_realtime_tweets(tweets, event_type)
             return
 
         if event_type == "fast_tweet":
-            self._handle_tweet(event.get("tweet") or {}, event_type)
+            self._handle_realtime_tweets([event.get("tweet") or {}], event_type)
             return
 
         print(f"Unhandled event_type={event_type}")
 
-    def _handle_tweet(self, raw_tweet, event_type):
+    def _process_tweet(self, raw_tweet, event_type):
         tweet = normalize_tweet(raw_tweet, event_type)
         tweet_id = tweet.get("tweet_id")
         if not tweet_id or tweet_id in self.processed_ids:
-            return
+            return None
 
         self.processed_ids.add(tweet_id)
         is_new, symbols = save_tweet(tweet)
@@ -155,21 +155,35 @@ class Monitor:
 
         if not is_new:
             print(f"duplicate tweet_id={tweet_id}")
-            return
+            return None
         if tweet.get("is_reply"):
             print(f"reply skipped tweet_id={tweet_id}")
+            return None
+
+        return {
+            "tweet": tweet,
+            "symbols": symbols,
+            "translation": get_translation(tweet_id) or "",
+            "is_new": is_new,
+        }
+
+    def _handle_realtime_tweets(self, raw_tweets, event_type):
+        items = [item for item in (self._process_tweet(raw, event_type) for raw in raw_tweets) if item]
+        if not items:
             return
 
-        username = tweet.get("author_screen_name") or self.config["watch"]["username"]
-        zh = translate_text(tweet.get("text") or "")
-        if zh:
-            update_translation(tweet_id, zh)
-            self._send_realtime_email(username, symbols, tweet, zh)
+        self._translate_items(items)
+        if len(items) == 1:
+            self._send_realtime_email(items[0])
+        else:
+            self._send_multi_user_email(items)
 
-        title = f"🔔 ${username} 新帖"
-        symbol_text = _format_symbols_text(symbols)
-        body = f"{symbol_text}\n{(tweet.get('text') or '')[:200]}"
-        notify(title, body, tweet.get("url"), sound=self.config.get("notify", {}).get("sound", True))
+        sound = self.config.get("notify", {}).get("sound", True)
+        for item in items:
+            tweet = item["tweet"]
+            username = tweet.get("author_screen_name") or "unknown"
+            body = f"{_format_symbols_text(item['symbols'])}\n{(tweet.get('text') or '')[:200]}"
+            notify(f"🔔 @{username} 新帖", body, tweet.get("url"), sound=sound)
 
     def _is_startup_batch(self, tweets):
         if self._startup_batch_handled or len(tweets) < STARTUP_BATCH_SIZE:
@@ -178,27 +192,30 @@ class Monitor:
         return True
 
     def _send_startup_digest_from_db(self):
-        rows = load_recent_main_tweets(STARTUP_BATCH_SIZE)
-        if not rows:
-            return
-        items = []
-        for index, row in enumerate(rows, start=1):
-            items.append(
+        groups = []
+        total = 0
+        for username in self.config["watch"]["usernames"]:
+            rows = load_recent_main_tweets(STARTUP_PER_USER, username=username)
+            items = [
                 {
-                    "index": index,
                     "tweet": row["tweet"],
                     "symbols": row["symbols"],
                     "translation": row["translation"],
                     "is_new": False,
                 }
-            )
-        self._translate_startup_items(items)
-        self._send_startup_batch_email(items, len(items))
+                for row in rows
+            ]
+            total += len(items)
+            groups.append((username, items))
+        if total == 0:
+            return
+        self._translate_items([item for _, items in groups for item in items])
+        self._send_startup_email(groups, total)
         self._startup_batch_handled = True
 
     def _handle_startup_batch(self, raw_tweets, event_type):
         items = []
-        for index, raw_tweet in enumerate(raw_tweets, start=1):
+        for raw_tweet in raw_tweets:
             tweet = normalize_tweet(raw_tweet, event_type)
             tweet_id = tweet.get("tweet_id")
             if not tweet_id or tweet_id in self.processed_ids:
@@ -214,7 +231,6 @@ class Monitor:
 
             items.append(
                 {
-                    "index": index,
                     "tweet": tweet,
                     "symbols": symbols,
                     "translation": get_translation(tweet_id) or "",
@@ -222,11 +238,17 @@ class Monitor:
                 }
             )
 
-        self._translate_startup_items(items)
-        self._send_startup_batch_email(items, len(raw_tweets))
+        if not items:
+            return
+        self._translate_items(items)
+        self._send_startup_email(_group_by_user(items), len(items))
 
-    def _translate_startup_items(self, items):
-        pending = [item for item in items if not item["translation"]]
+    def _translate_items(self, items):
+        pending = [
+            item
+            for item in items
+            if not item["translation"] and (item["tweet"].get("text") or "").strip()
+        ]
         if not pending:
             return
 
@@ -250,67 +272,94 @@ class Monitor:
                 item["translation"] = zh
                 update_translation(tweet_id, zh)
 
-    def _send_startup_batch_email(self, items, raw_count):
+    def _send_startup_email(self, groups, total):
         watch = self.config["watch"]
-        subject = f"监控已启动 @{watch['username']} 最近{raw_count}条"
-        header = (
-            f"监控账号：@{watch['username']}\n"
-            f"规则标签：{watch['tag']}\n"
-            f"规则 ID：{self.rule_id or '-'}\n"
-            f"检查间隔：{watch['interval_seconds']} 秒\n"
-            f"启动批量推送：{raw_count} 条\n"
-            f"本邮件包含：{len(items)} 条\n"
-        )
-        sections = [header]
-        for item in items:
-            tweet = item["tweet"]
-            symbol_text = _format_symbols_text(item["symbols"])
-            status = "新入库" if item["is_new"] else "数据库已存在"
-            sections.append(
-                "\n"
-                f"--- #{item['index']} {symbol_text} / {status} ---\n"
-                f"时间：{tweet.get('created_at') or '-'}\n"
-                f"原帖：{tweet.get('url') or ''}\n"
-                f"【中文翻译】\n{item['translation'] or '（翻译失败，保留原文）'}\n\n"
-                f"【原文】\n{tweet.get('text') or ''}\n"
-            )
-        body_text = "\n".join(sections)
-        send_email(subject, body_text, body_html=self._startup_batch_html(subject, items, raw_count))
+        usernames = watch["usernames"]
+        subject = f"监控已启动 {len(usernames)}个账号 共{total}条"
+        header_lines = [
+            f"监控账号：{'、'.join('@' + name for name in usernames)}",
+            f"规则标签：{watch['tag']}",
+            f"规则 ID：{self.rule_id or '-'}",
+            f"检查间隔：{watch['interval_seconds']} 秒",
+            f"每账号最多 {STARTUP_PER_USER} 条，共 {total} 条",
+        ]
+        self._send_grouped_email(subject, header_lines, groups, show_status=True)
 
-    def _startup_batch_html(self, subject, items, raw_count):
-        watch = self.config["watch"]
-        cards = []
-        for item in items:
-            tweet = item["tweet"]
-            symbols = item["symbols"]
-            symbol_html = "".join(
-                f"<span class=\"tag\">{html.escape(_format_symbol_label(symbol))}</span>" for symbol in symbols
-            )
-            if not symbol_html:
-                symbol_html = "<span class=\"tag muted\">无股票符号</span>"
-            status = "新入库" if item["is_new"] else "数据库已存在"
-            cards.append(
-                f"""
-                <article class="tweet-card">
-                    <div class="card-head">
-                        <div>
-                            <div class="card-kicker">#{item['index']} · {html.escape(status)}</div>
-                            <h2>{symbol_html}</h2>
+    def _send_multi_user_email(self, items):
+        groups = _group_by_user(items)
+        counts = "、".join(f"@{username} {len(group_items)}条" for username, group_items in groups)
+        subject = f"📈 新帖 {len(items)}条 · {counts}"
+        self._send_grouped_email(subject, [f"本批新帖：{counts}"], groups, show_status=False)
+
+    def _send_grouped_email(self, subject, header_lines, groups, show_status):
+        sections = ["\n".join(header_lines) + "\n"]
+        for username, items in groups:
+            sections.append(f"\n======== @{username}（{len(items)} 条）========")
+            if not items:
+                sections.append("（该账号暂无可展示的主帖）")
+            for index, item in enumerate(items, start=1):
+                tweet = item["tweet"]
+                status = ""
+                if show_status:
+                    status = " / " + ("新入库" if item["is_new"] else "数据库已存在")
+                sections.append(
+                    "\n"
+                    f"--- #{index} {_format_symbols_text(item['symbols'])}{status} ---\n"
+                    f"时间：{tweet.get('created_at') or '-'}\n"
+                    f"原帖：{tweet.get('url') or ''}\n"
+                    f"【中文翻译】\n{item['translation'] or '（翻译失败，保留原文）'}\n\n"
+                    f"【原文】\n{tweet.get('text') or ''}\n"
+                )
+        body_text = "\n".join(sections)
+        send_email(subject, body_text, body_html=self._grouped_html(subject, header_lines, groups, show_status))
+
+    def _grouped_html(self, subject, header_lines, groups, show_status):
+        user_sections = []
+        for username, items in groups:
+            cards = []
+            for index, item in enumerate(items, start=1):
+                tweet = item["tweet"]
+                symbol_html = "".join(
+                    f"<span class=\"tag\">{html.escape(_format_symbol_label(symbol))}</span>"
+                    for symbol in item["symbols"]
+                )
+                if not symbol_html:
+                    symbol_html = "<span class=\"tag muted\">无股票符号</span>"
+                kicker = f"#{index}"
+                if show_status:
+                    kicker += " · " + ("新入库" if item["is_new"] else "数据库已存在")
+                cards.append(
+                    f"""
+                    <article class="tweet-card">
+                        <div class="card-head">
+                            <div>
+                                <div class="card-kicker">{html.escape(kicker)}</div>
+                                <h2>{symbol_html}</h2>
+                            </div>
+                            <a class="open-link" href="{html.escape(tweet.get('url') or '')}">打开原帖</a>
                         </div>
-                        <a class="open-link" href="{html.escape(tweet.get('url') or '')}">打开原帖</a>
-                    </div>
-                    <div class="meta">时间：{html.escape(tweet.get('created_at') or '-')}</div>
-                    <section class="translation">
-                        <h3>中文翻译</h3>
-                        <p>{html.escape(item['translation'] or '（翻译失败，保留原文）').replace(chr(10), '<br>')}</p>
-                    </section>
-                    <section class="original">
-                        <h3>原文</h3>
-                        <p>{html.escape(tweet.get('text') or '').replace(chr(10), '<br>')}</p>
-                    </section>
-                </article>
+                        <div class="meta">@{html.escape(username)} · {html.escape(tweet.get('created_at') or '-')}</div>
+                        <section class="translation">
+                            <h3>中文翻译</h3>
+                            <p>{html.escape(item['translation'] or '（翻译失败，保留原文）').replace(chr(10), '<br>')}</p>
+                        </section>
+                        <section class="original">
+                            <h3>原文</h3>
+                            <p>{html.escape(tweet.get('text') or '').replace(chr(10), '<br>')}</p>
+                        </section>
+                    </article>
+                    """
+                )
+            cards_html = "".join(cards) if cards else '<p class="empty">（该账号暂无可展示的主帖）</p>'
+            user_sections.append(
+                f"""
+                <section class="user-block">
+                    <div class="user-head">@{html.escape(username)} · {len(items)} 条</div>
+                    {cards_html}
+                </section>
                 """
             )
+        summary = " · ".join(html.escape(line) for line in header_lines)
 
         return f"""
         <!DOCTYPE html>
@@ -357,6 +406,16 @@ class Monitor:
                     color: #cbd5e1;
                 }}
                 .content {{ padding: 26px 30px 32px; }}
+                .user-block {{ margin-bottom: 26px; }}
+                .user-head {{
+                    font-size: 17px;
+                    font-weight: 800;
+                    color: #0f172a;
+                    padding-bottom: 8px;
+                    margin-bottom: 12px;
+                    border-bottom: 2px solid #14b8a6;
+                }}
+                .empty {{ color: #64748b; }}
                 .tweet-card {{
                     background: #ffffff;
                     border: 1px solid #d8e1ed;
@@ -438,14 +497,10 @@ class Monitor:
                     <div class="hero">
                         <div class="brand">serenity stock monitor</div>
                         <h1>{html.escape(subject)}</h1>
-                        <div class="summary">
-                            账号：@{html.escape(watch['username'])} · 规则：{html.escape(watch['tag'])} ·
-                            间隔：{html.escape(str(watch['interval_seconds']))} 秒 ·
-                            启动推送：{raw_count} 条 · 主帖入邮：{len(items)} 条
-                        </div>
+                        <div class="summary">{summary}</div>
                     </div>
                     <div class="content">
-                        {''.join(cards) if cards else '<p>本次启动批量中没有可发送的主帖。</p>'}
+                        {''.join(user_sections) if user_sections else '<p>没有可发送的主帖。</p>'}
                     </div>
                     <div class="footer">
                         本邮件由 monitor_X_stock_god 自动生成。内容仅用于研究和跟踪，不构成投资建议。
@@ -456,16 +511,19 @@ class Monitor:
         </html>
         """
 
-    def _send_realtime_email(self, username, symbols, tweet, zh):
-        symbol_text = _format_symbols_text(symbols)
+    def _send_realtime_email(self, item):
+        tweet = item["tweet"]
+        username = tweet.get("author_screen_name") or "unknown"
+        zh = item["translation"]
+        symbol_text = _format_symbols_text(item["symbols"])
         subject = f"📈 {username} 新帖 {symbol_text}"
         body = (
-            f"【中文翻译】\n{zh}\n\n"
+            f"【中文翻译】\n{zh or '（翻译失败，保留原文）'}\n\n"
             f"【原文】\n{tweet.get('text') or ''}\n\n"
             f"时间：{tweet.get('created_at') or '-'}\n"
             f"原帖：{tweet.get('url') or ''}"
         )
-        send_email(subject, body, body_html=self._single_tweet_html(subject, username, symbols, tweet, zh))
+        send_email(subject, body, body_html=self._single_tweet_html(subject, username, item["symbols"], tweet, zh))
 
     def _single_tweet_html(self, subject, username, symbols, tweet, zh):
         symbol_html = "".join(
@@ -585,7 +643,7 @@ class Monitor:
                         <div class="meta">原帖：<a class="action" href="{html.escape(tweet.get('url') or '')}">打开 X 链接</a></div>
                         <section class="panel translation">
                             <h2>中文翻译</h2>
-                            <p>{html.escape(zh or '').replace(chr(10), '<br>')}</p>
+                            <p>{html.escape(zh or '（翻译失败，保留原文）').replace(chr(10), '<br>')}</p>
                         </section>
                         <section class="panel original">
                             <h2>原文</h2>
@@ -622,6 +680,14 @@ class Monitor:
         if self.ws:
             self.ws.close()
         sys.exit(0)
+
+
+def _group_by_user(items):
+    groups = {}
+    for item in items:
+        username = item["tweet"].get("author_screen_name") or "unknown"
+        groups.setdefault(username, []).append(item)
+    return list(groups.items())
 
 
 def _format_symbol_label(symbol):

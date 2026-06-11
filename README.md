@@ -4,9 +4,31 @@
 
 ## 项目简介
 
-这是一个独立的实时 X 荐股账号监控项目。它可以监控某个 X 账号的新帖，提取正文里的股票 `$SYMBOL`，用大模型翻译成简体中文，写入独立 SQLite 数据库，并在实时新帖翻译后通过邮件通知你。
+这是一个独立的实时 X 荐股账号监控项目。它可以同时监控**一个或多个** X 账号的新帖，提取正文里的股票 `$SYMBOL`，用大模型翻译成简体中文，写入独立 SQLite 数据库，并在实时新帖翻译后通过邮件通知你。
 
 项目默认使用本地数据库 `data/monitor.sqlite`，不依赖其他项目数据库。历史数据、实时数据、股票符号、原文、中文翻译和原始 JSON 都保存在本项目目录内，便于后续研究、回测和可视化。
+
+## 多账号监控（2026-06 更新）
+
+- **多账号实时监控**：`WATCH_USERNAMES` 逗号分隔多个用户名，自动合成一条 `from:a OR from:b` 规则（共用一条规则，费用不随人数翻倍）。
+- **启动邮件按人分组**：每次启动发送一封摘要邮件，每个账号一个分组、各最近 5 条（含中文翻译）。
+- **实时邮件**：单条新帖一封邮件（标题带作者）；同批多条新帖合并为一封、按人分组。
+- **历史回补按账号配置且可选**：每个账号一个 curl 子目录 `x_curl/<用户名>/`；不建目录就不下载该账号历史，`HISTORY_ENABLED=false` 全局关闭。
+- **历史时间范围限制**：`HISTORY_MAX_MONTHS=3` 只回补最近 3 个月（`0` 不限制），命令行可用 `--months N` 覆盖。
+- **一键加账号 curl**：`python add_user_curl.py <用户名>` 自动查 userId 并从现有账号克隆 curl 文件。
+
+**添加一个新监控账号的完整步骤**：
+
+```bash
+# 1.（可选，要历史才做）克隆 curl
+python add_user_curl.py 新用户名
+
+# 2. .env 名单加人
+#    WATCH_USERNAMES=aleabitoreddit,新用户名
+
+# 3. 重启 monitor.py，看日志确认规则：
+#    Rule active: ... value=from:aleabitoreddit OR from:新用户名
+```
 
 ## 架构与数据流
 
@@ -33,6 +55,7 @@
 - `translate.py`: OpenAI 兼容 Chat Completions 翻译客户端和历史批量翻译 CLI。
 - `email_sender.py`: SMTP / STARTTLS 邮件发送。
 - `rules.py`: twitterapi.io tweet filter 规则管理。
+- `add_user_curl.py`: 给新账号一键克隆 curl 文件（自动查并替换 userId）。
 - `notify.py`: 桌面通知、Telegram、Webhook 和终端通知。
 - `config.py`: 从 `.env` 加载配置，组装成程序使用的结构。
 - `.env.example`: 可提交的配置模板，不含真实密钥。
@@ -63,18 +86,19 @@ cp .env.example .env
 | 变量 | 说明 |
 |---|---|
 | `TWITTERAPI_KEY` | twitterapi.io 的 API key（注册后在控制台获取）。也可用同名系统环境变量覆盖。 |
-| `WATCH_USERNAME` | 要监控的 X 用户名，不带 `@`。 |
+| `WATCH_USERNAMES` | 要监控的 X 用户名，不带 `@`；多个账号用逗号分隔（兼容旧的 `WATCH_USERNAME`）。 |
 | `WATCH_TAG` | twitterapi.io 规则标签，建议用唯一名称。 |
 | `WATCH_INTERVAL_SECONDS` | 规则后台检查间隔，默认 `60` 秒。tweet_filter 会按该间隔轮询；空结果也可能产生最低请求费。 |
 | `RULE_ID` | 已有规则 ID；首次留空，运行 `python rules.py ensure` 自动创建。 |
 | `DB_PATH` | SQLite 路径，默认 `data/monitor.sqlite`（相对模块目录）。 |
 | `DEACTIVATE_ON_EXIT` | Ctrl+C 退出时是否停用规则以停止计费。 |
-| `HISTORY_ENABLED` | 是否启用历史抓取。 |
+| `HISTORY_ENABLED` | 是否启用历史抓取。设为 `false` 则完全不下载历史，只做实时监控。 |
 | `HISTORY_RUN_ON_START` | 启动 `monitor.py` 前是否先跑一次历史增量补漏。 |
 | `HISTORY_MODE_ON_START` | 启动时历史模式，通常 `incremental`。 |
-| `HISTORY_X_CURL_DIR` | 存放 X GraphQL curl 文件的目录，默认 `x_curl`（模块内，已 gitignore）。 |
+| `HISTORY_X_CURL_DIR` | 存放 X GraphQL curl 文件的根目录，默认 `x_curl`（模块内，已 gitignore）。按账号分子目录：`x_curl/<用户名>/UserTweets.curl` 等；没有子目录的账号不下载历史。 |
 | `HISTORY_MAX_PAGES` | 每类时间线最大翻页数。 |
 | `HISTORY_PAUSE_SECONDS` | 翻页间隔，避免请求过快。 |
+| `HISTORY_MAX_MONTHS` | 只回补最近 N 个月的历史（按 30 天/月估算），早于截止时间的不入库、翻页提前停止；`0` 或留空表示不限制。也可用 `python history.py --months N` 临时覆盖。 |
 | `LLM_URL` / `LLM_KEY` / `LLM_MODEL` | 任意 OpenAI 兼容 Chat Completions 接口、key、模型名。 |
 | `TRANSLATE_ENABLED` | 实时翻译开关。关闭后仍入库和桌面通知，但不翻译、不发翻译邮件。 |
 | `EMAIL_ENABLED` | 是否启用邮件。 |
@@ -114,18 +138,36 @@ cp .env.example .env
    - `EMAIL_TO`：收件人，多个用逗号分隔
 - 其他邮箱（163 / QQ 等）同理：换成对应 SMTP 主机和端口，密码用邮箱的「授权码」。
 
-**4. 监控目标与规则（`WATCH_USERNAME` / `RULE_ID`）**
+**4. 监控目标与规则（`WATCH_USERNAMES` / `RULE_ID`）**
 
-- `WATCH_USERNAME`：要监控的 X 用户名，不带 `@`。
+- `WATCH_USERNAMES`：要监控的 X 用户名，不带 `@`；多个账号用逗号分隔，规则会自动拼成 `from:a OR from:b`。
 - `RULE_ID` 首次留空。运行 `python rules.py ensure` 会自动创建并激活规则并打印 rule_id；把它填回 `.env` 可复用。
 
-### 准备 X GraphQL curl 文件
+### 准备 X GraphQL curl 文件（可选，按账号）
 
-历史抓取需要三个 curl 文件，放在 `HISTORY_X_CURL_DIR` 指向的目录：
+历史抓取按账号配置：在 `HISTORY_X_CURL_DIR` 下为每个要回补历史的账号建一个与用户名同名的子目录，放入该账号的 curl 文件：
 
-- `UserTweets.curl`
-- `UserTweetsAndReplies.curl`
-- `UserSuperFollowTweets.curl`
+```
+x_curl/
+  aleabitoreddit/
+    UserTweets.curl
+    UserTweetsAndReplies.curl
+    UserSuperFollowTweets.curl
+  另一个账号/
+    UserTweets.curl   # 三个文件不必齐全，缺哪个就跳过哪类时间线
+```
+
+**历史下载是可选的**：
+
+- 不想给某个账号下载历史 → 不建该账号的子目录即可，实时监控不受影响（该账号数据从开始监控起积累）。
+- 完全不下载历史 → 设 `HISTORY_ENABLED=false`。
+- 目标账号的 userId 会自动从 curl 文件 URL 中解析，无需手工配置。
+
+**加新账号的快捷方式**：已有一个账号的 curl 后，其余账号一条命令克隆（cookie 通用，自动查并替换 userId）：
+
+```bash
+python add_user_curl.py 新账号用户名
+```
 
 复制方法：
 
@@ -135,7 +177,7 @@ cp .env.example .env
 4. 刷新页面或滚动时间线。
 5. 找到 GraphQL 请求，例如 `UserTweets`、`UserTweetsAndReplies`、`UserSuperFollowTweets`。
 6. 右键请求，选择 `Copy` -> `Copy as cURL`。
-7. 分别保存为上面的 `.curl` 文件名。
+7. 分别保存到 `x_curl/<该账号用户名>/` 下的对应 `.curl` 文件名。
 
 这些 curl 文件包含登录 cookie 和鉴权 header，切勿提交到 git，切勿公开分享。
 
@@ -225,9 +267,31 @@ python rules.py list   # 看到 is_effect=0 才算真的停止计费
 
 ## Overview
 
-This is a standalone local project for monitoring stock-related posts from a selected X account. It watches new X posts, extracts stock `$SYMBOL` mentions, translates posts into Simplified Chinese with an LLM, stores everything in an independent SQLite database, and sends translated real-time posts by email.
+This is a standalone local project for monitoring stock-related posts from **one or more** X accounts. It watches new X posts, extracts stock `$SYMBOL` mentions, translates posts into Simplified Chinese with an LLM, stores everything in an independent SQLite database, and sends translated real-time posts by email.
 
 The default database is `data/monitor.sqlite`. It does not depend on any external project database. Historical posts, real-time posts, symbols, original text, Chinese translations, and raw JSON are stored inside this project directory for research, backtesting, and visualization.
+
+## Multi-Account Monitoring (2026-06 update)
+
+- **Multiple accounts in real time**: `WATCH_USERNAMES` takes a comma-separated list and builds a single `from:a OR from:b` rule (one rule shared, cost does not scale with account count).
+- **Startup digest grouped by account**: one email per start, one section per account with its 5 most recent posts (with Chinese translation).
+- **Real-time emails**: one tweet → one email with the author in the subject; multiple tweets in one push → merged into one email grouped by account.
+- **Per-account, optional history backfill**: one curl subdirectory per account (`x_curl/<username>/`); no subdirectory means no history for that account, and `HISTORY_ENABLED=false` disables history entirely.
+- **History time window**: `HISTORY_MAX_MONTHS=3` backfills only the last 3 months (`0` = unlimited), overridable with `--months N`.
+- **One-command curl cloning**: `python add_user_curl.py <username>` looks up the userId and clones curl files from an existing account.
+
+**Steps to add a new account:**
+
+```bash
+# 1. (optional, only if you want history) clone curl files
+python add_user_curl.py newusername
+
+# 2. add it to WATCH_USERNAMES in .env
+#    WATCH_USERNAMES=aleabitoreddit,newusername
+
+# 3. restart monitor.py and check the log:
+#    Rule active: ... value=from:aleabitoreddit OR from:newusername
+```
 
 ## Architecture And Data Flow
 
@@ -254,6 +318,7 @@ Unified data flow:
 - `translate.py`: OpenAI-compatible Chat Completions translation client and historical translation CLI.
 - `email_sender.py`: SMTP / STARTTLS email sending.
 - `rules.py`: twitterapi.io tweet filter rule management.
+- `add_user_curl.py`: one-command curl cloning for new accounts (auto userId lookup and replacement).
 - `notify.py`: Desktop, Telegram, webhook, and terminal notifications.
 - `config.py`: Loads configuration from `.env` into the structure the app uses.
 - `.env.example`: Safe configuration template with no real secrets.
@@ -284,18 +349,19 @@ Environment variables:
 | Variable | Description |
 |---|---|
 | `TWITTERAPI_KEY` | Your twitterapi.io API key (from its dashboard). A real environment variable of the same name overrides the `.env` value. |
-| `WATCH_USERNAME` | The X username to monitor, without `@`. |
+| `WATCH_USERNAMES` | The X usernames to monitor, without `@`; separate multiple accounts with commas (legacy `WATCH_USERNAME` still works). |
 | `WATCH_TAG` | twitterapi.io rule tag. Use a project-specific unique name. |
 | `WATCH_INTERVAL_SECONDS` | Server-side rule check interval. Default `60` seconds. tweet_filter checks on this interval; empty results may still incur the minimum request charge. |
 | `RULE_ID` | Existing rule ID. Leave empty on first use; `python rules.py ensure` creates one. |
 | `DB_PATH` | SQLite path, default `data/monitor.sqlite` (relative to the module directory). |
 | `DEACTIVATE_ON_EXIT` | Whether Ctrl+C deactivates the rule to stop billing. |
-| `HISTORY_ENABLED` | Enable historical fetching. |
+| `HISTORY_ENABLED` | Enable historical fetching. Set `false` to skip history entirely (real-time only). |
 | `HISTORY_RUN_ON_START` | Run an incremental history catch-up before `monitor.py` connects. |
 | `HISTORY_MODE_ON_START` | Startup history mode, usually `incremental`. |
-| `HISTORY_X_CURL_DIR` | Directory containing X GraphQL curl files, default `x_curl` (in-module, gitignored). |
+| `HISTORY_X_CURL_DIR` | Root directory of X GraphQL curl files, default `x_curl` (in-module, gitignored). One subdirectory per account: `x_curl/<username>/UserTweets.curl` etc.; accounts without a subdirectory skip history. |
 | `HISTORY_MAX_PAGES` | Maximum pages per timeline source. |
 | `HISTORY_PAUSE_SECONDS` | Pause between pages to avoid excessive request rate. |
+| `HISTORY_MAX_MONTHS` | Only backfill the last N months (approximated as 30 days/month); older tweets are not stored and paging stops early. `0` or empty means unlimited. Override ad hoc with `python history.py --months N`. |
 | `LLM_URL` / `LLM_KEY` / `LLM_MODEL` | Any OpenAI-compatible Chat Completions endpoint, key, and model name. |
 | `TRANSLATE_ENABLED` | Real-time translation switch. If off, posts are still stored and notified, but not translated/emailed. |
 | `EMAIL_ENABLED` | Enable email. |
@@ -335,18 +401,36 @@ Environment variables:
    - `EMAIL_TO`: recipients, comma-separated for multiple
 - Other providers (e.g. Outlook, QQ, 163) work the same way with their SMTP host/port and an app/authorization password.
 
-**4. Watch target and rule (`WATCH_USERNAME` / `RULE_ID`)**
+**4. Watch target and rule (`WATCH_USERNAMES` / `RULE_ID`)**
 
-- `WATCH_USERNAME`: the X username to monitor, without `@`.
+- `WATCH_USERNAMES`: the X usernames to monitor, without `@`; commas separate multiple accounts and the rule becomes `from:a OR from:b`.
 - Leave `RULE_ID` empty at first. Running `python rules.py ensure` creates and activates the rule and prints its rule_id; put it back into `.env` to reuse it.
 
-### Prepare X GraphQL curl files
+### Prepare X GraphQL curl files (optional, per account)
 
-Historical fetching needs three curl files in the `HISTORY_X_CURL_DIR` directory:
+Historical fetching is configured per account: create a subdirectory named after each username under `HISTORY_X_CURL_DIR` and put that account's curl files inside:
 
-- `UserTweets.curl`
-- `UserTweetsAndReplies.curl`
-- `UserSuperFollowTweets.curl`
+```
+x_curl/
+  aleabitoreddit/
+    UserTweets.curl
+    UserTweetsAndReplies.curl
+    UserSuperFollowTweets.curl
+  anotheruser/
+    UserTweets.curl   # the three files are optional; missing ones are skipped
+```
+
+**History download is optional:**
+
+- Skip history for one account → simply don't create its subdirectory; real-time monitoring is unaffected (data accumulates from the moment monitoring starts).
+- Skip history entirely → set `HISTORY_ENABLED=false`.
+- The target userId is parsed automatically from the curl file URL; no manual configuration needed.
+
+**Shortcut for adding accounts:** once one account's curl files exist, clone them for any other account in one command (cookies are shared; the userId is looked up and replaced automatically):
+
+```bash
+python add_user_curl.py <new_username>
+```
 
 How to copy them:
 
@@ -356,7 +440,7 @@ How to copy them:
 4. Refresh the page or scroll the timeline.
 5. Find GraphQL requests such as `UserTweets`, `UserTweetsAndReplies`, or `UserSuperFollowTweets`.
 6. Right-click the request and choose `Copy` -> `Copy as cURL`.
-7. Save each request using the file names above.
+7. Save each request under `x_curl/<username>/` using the file names above.
 
 These curl files contain login cookies and auth headers. Never commit or share them.
 

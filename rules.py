@@ -144,7 +144,7 @@ def main():
 
     rule_id = args.rule_id or config.get("rule_id")
     if args.command == "ensure":
-        value = f"from:{watch['username']}"
+        value = " OR ".join(f"from:{name}" for name in watch["usernames"])
         print(manager.ensure_active(watch["tag"], value, watch["interval_seconds"]))
     elif args.command == "deactivate":
         print(manager.deactivate(rule_id))

@@ -56,7 +56,7 @@ python add_user_curl.py 新用户名
 - `email_sender.py`: SMTP / STARTTLS 邮件发送。
 - `rules.py`: twitterapi.io tweet filter 规则管理。
 - `add_user_curl.py`: 给新账号一键克隆 curl 文件（自动查并替换 userId）。
-- `notify.py`: 桌面通知、Telegram、Webhook 和终端通知。
+- `notify.py`: 桌面通知、Telegram、Webhook、飞书和终端通知。
 - `config.py`: 从 `.env` 加载配置，组装成程序使用的结构。
 - `.env.example`: 可提交的配置模板，不含真实密钥。
 - `requirements.txt`: Python 依赖。
@@ -109,6 +109,7 @@ cp .env.example .env
 | `NOTIFY_DESKTOP` / `NOTIFY_SOUND` | macOS 桌面通知与提示音开关。 |
 | `NOTIFY_TELEGRAM_ENABLED` / `NOTIFY_TELEGRAM_BOT_TOKEN` / `NOTIFY_TELEGRAM_CHAT_ID` | 可选 Telegram 通知。 |
 | `NOTIFY_WEBHOOK_ENABLED` / `NOTIFY_WEBHOOK_URL` | 可选 HTTP webhook。 |
+| `NOTIFY_FEISHU_ENABLED` / `NOTIFY_FEISHU_WEBHOOK` / `NOTIFY_FEISHU_SECRET` | 可选飞书群自定义机器人通知；`SECRET` 仅在机器人开启签名校验时需要。 |
 
 ### 各项凭据如何获取
 
@@ -138,7 +139,20 @@ cp .env.example .env
    - `EMAIL_TO`：收件人，多个用逗号分隔
 - 其他邮箱（163 / QQ 等）同理：换成对应 SMTP 主机和端口，密码用邮箱的「授权码」。
 
-**4. 监控目标与规则（`WATCH_USERNAMES` / `RULE_ID`）**
+**4. 飞书群机器人（`NOTIFY_FEISHU_WEBHOOK` / `NOTIFY_FEISHU_SECRET`）**
+
+> ⚠️ 自定义机器人**只能在电脑端创建**（飞书桌面客户端或网页版 https://www.feishu.cn ），手机 App 没有该入口。
+
+1. 用电脑端打开飞书，进入目标群聊。
+2. 点群右上角 `···`（设置）→ 「群机器人」→ 「添加机器人」→ 选「自定义机器人」。
+3. 起个名字（如「荐股监控」），下一步。
+4. 安全设置建议勾选「签名校验」，把生成的密钥填入 `NOTIFY_FEISHU_SECRET`（不开签名则留空）。
+5. 复制 webhook 地址填入 `NOTIFY_FEISHU_WEBHOOK`。
+6. 设 `NOTIFY_FEISHU_ENABLED=true` 并重启监控。新帖会以卡片消息推送到该群（标题 + 正文 + 「查看推文」按钮）。
+- 限制：自定义机器人只能发到所在群（不能私聊），限流 100 条/分钟。
+- 想私人接收：自己建一个**只有你一个人的群**，再按上面步骤加机器人即可。
+
+**5. 监控目标与规则（`WATCH_USERNAMES` / `RULE_ID`）**
 
 - `WATCH_USERNAMES`：要监控的 X 用户名，不带 `@`；多个账号用逗号分隔，规则会自动拼成 `from:a OR from:b`。
 - `RULE_ID` 首次留空。运行 `python rules.py ensure` 会自动创建并激活规则并打印 rule_id；把它填回 `.env` 可复用。
@@ -331,7 +345,7 @@ Unified data flow:
 - `email_sender.py`: SMTP / STARTTLS email sending.
 - `rules.py`: twitterapi.io tweet filter rule management.
 - `add_user_curl.py`: one-command curl cloning for new accounts (auto userId lookup and replacement).
-- `notify.py`: Desktop, Telegram, webhook, and terminal notifications.
+- `notify.py`: Desktop, Telegram, webhook, Feishu (Lark), and terminal notifications.
 - `config.py`: Loads configuration from `.env` into the structure the app uses.
 - `.env.example`: Safe configuration template with no real secrets.
 - `requirements.txt`: Python dependencies.
@@ -384,6 +398,7 @@ Environment variables:
 | `NOTIFY_DESKTOP` / `NOTIFY_SOUND` | macOS desktop notification and sound switches. |
 | `NOTIFY_TELEGRAM_ENABLED` / `NOTIFY_TELEGRAM_BOT_TOKEN` / `NOTIFY_TELEGRAM_CHAT_ID` | Optional Telegram notifications. |
 | `NOTIFY_WEBHOOK_ENABLED` / `NOTIFY_WEBHOOK_URL` | Optional HTTP webhook. |
+| `NOTIFY_FEISHU_ENABLED` / `NOTIFY_FEISHU_WEBHOOK` / `NOTIFY_FEISHU_SECRET` | Optional Feishu (Lark) group custom-bot notifications; `SECRET` is only needed when signature verification is enabled on the bot. |
 
 ### How To Get Each Credential
 
@@ -413,7 +428,20 @@ Environment variables:
    - `EMAIL_TO`: recipients, comma-separated for multiple
 - Other providers (e.g. Outlook, QQ, 163) work the same way with their SMTP host/port and an app/authorization password.
 
-**4. Watch target and rule (`WATCH_USERNAMES` / `RULE_ID`)**
+**4. Feishu (Lark) group bot (`NOTIFY_FEISHU_WEBHOOK` / `NOTIFY_FEISHU_SECRET`)**
+
+> ⚠️ A custom bot can **only be created on desktop** (the Feishu/Lark desktop client or the web app at https://www.feishu.cn ); the mobile app has no such entry point.
+
+1. On desktop, open Feishu and go to the target group chat.
+2. Click `···` (Settings) at the top-right → "Group Bots" → "Add Bot" → choose "Custom Bot".
+3. Give it a name (e.g. "Stock Monitor") and continue.
+4. Enable "Signature verification" in the security settings (recommended) and put the generated secret into `NOTIFY_FEISHU_SECRET` (leave empty if not enabled).
+5. Copy the webhook URL into `NOTIFY_FEISHU_WEBHOOK`.
+6. Set `NOTIFY_FEISHU_ENABLED=true` and restart the monitor. New posts arrive as card messages (title + body + a "view tweet" button).
+- Limits: a custom bot can only post to its own group (no DMs), rate limit 100 messages/minute.
+- To receive privately: create a group with only yourself in it, then add the bot following the steps above.
+
+**5. Watch target and rule (`WATCH_USERNAMES` / `RULE_ID`)**
 
 - `WATCH_USERNAMES`: the X usernames to monitor, without `@`; commas separate multiple accounts and the rule becomes `from:a OR from:b`.
 - Leave `RULE_ID` empty at first. Running `python rules.py ensure` creates and activates the rule and prints its rule_id; put it back into `.env` to reuse it.

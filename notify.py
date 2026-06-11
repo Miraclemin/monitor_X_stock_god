@@ -1,4 +1,8 @@
+import base64
+import hashlib
+import hmac
 import subprocess
+import time
 
 import requests
 
@@ -23,6 +27,10 @@ def notify(title, body, url=None, sound=True):
     webhook = settings.get("webhook") or {}
     if webhook.get("enabled"):
         _webhook(webhook, title, body, url)
+
+    feishu = settings.get("feishu") or {}
+    if feishu.get("enabled"):
+        _feishu(feishu, title, body, url)
 
 
 def _desktop(title, body, sound):
@@ -52,6 +60,42 @@ def _webhook(settings, title, body, url):
         requests.post(settings["url"], json={"title": title, "body": body, "url": url}, timeout=15).raise_for_status()
     except Exception as exc:
         print(f"[notify.webhook] {exc}")
+
+
+def _feishu(settings, title, body, url):
+    try:
+        webhook = settings.get("webhook")
+        if not webhook:
+            print("[notify.feishu] no webhook configured")
+            return
+        payload = {"msg_type": "interactive", "card": _feishu_card(title, body, url)}
+        secret = settings.get("secret")
+        if secret:
+            timestamp = str(int(time.time()))
+            digest = hmac.new(f"{timestamp}\n{secret}".encode(), digestmod=hashlib.sha256).digest()
+            payload["timestamp"] = timestamp
+            payload["sign"] = base64.b64encode(digest).decode()
+        resp = requests.post(webhook, json=payload, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code"):
+            print(f"[notify.feishu] code={data['code']} msg={data.get('msg')}")
+    except Exception as exc:
+        print(f"[notify.feishu] {exc}")
+
+
+def _feishu_card(title, body, url):
+    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": body or ""}}]
+    if url:
+        elements.append({
+            "tag": "action",
+            "actions": [{"tag": "button", "text": {"tag": "plain_text", "content": "查看推文"}, "type": "primary", "url": url}],
+        })
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {"template": "blue", "title": {"tag": "plain_text", "content": title or ""}},
+        "elements": elements,
+    }
 
 
 def _as_quote(value):

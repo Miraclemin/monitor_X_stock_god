@@ -91,5 +91,10 @@ def load_config():
                 "enabled": _bool("NOTIFY_WEBHOOK_ENABLED", False),
                 "url": _str("NOTIFY_WEBHOOK_URL"),
             },
+            "feishu": {
+                "enabled": _bool("NOTIFY_FEISHU_ENABLED", False),
+                "webhook": _str("NOTIFY_FEISHU_WEBHOOK"),
+                "secret": _str("NOTIFY_FEISHU_SECRET"),
+            },
         },
     }

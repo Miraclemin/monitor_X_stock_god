@@ -263,6 +263,8 @@ python rules.py list   # 看到 is_effect=0 才算真的停止计费
 
 ## 注意事项与免责声明
 
+- **监控对象必须是 X 搜索层可见的正常账号**。粉丝极少或新注册的小号可能被 X 排除在搜索索引之外（自己登录能看到帖子，但 `from:用户名` 搜索查不到）。`tweet_filter` 规则基于搜索层，这类账号永远不会触发推送——所以也**无法用自己的小号测试链路**，请用正常活跃账号验证。
+- **同一条旧帖可能被服务端反复推送**：twitterapi.io 检查的 since_id 边界是闭区间，没有新帖时最新一条会被重复推送（每次按 1 条计费），并与空结果随机交替——这是服务端行为加 X 搜索抖动，属正常现象。本程序按 tweet_id 去重，不会重复发邮件或重复入库；监控对象发出新帖后自动恢复安静。降低成本可调大 `WATCH_INTERVAL_SECONDS`。
 - 同一 twitterapi.io key 同时只能有一个 WebSocket 连接。
 - `x_curl` cookie 会过期，抓取失败时需要重新从浏览器复制 curl。
 - curl 文件含 cookie，`.env` 含密钥和密码，切勿提交到 git。
@@ -536,6 +538,8 @@ python rules.py list   # is_effect=0 means billing is really stopped
 
 ## Notes And Disclaimer
 
+- **Watched accounts must be visible to X's search layer.** Tiny or newly registered accounts may be excluded from X's search index (their posts are visible when logged in, but `from:username` search returns nothing). `tweet_filter` rules are search-based, so such accounts never trigger any push — which also means **you cannot test the pipeline with your own throwaway account**; verify with a normally active account instead.
+- **The same old tweet may be re-delivered repeatedly by the server**: twitterapi.io's since_id boundary is inclusive, so when there is nothing new the latest tweet gets re-pushed (billed as 1 result each time), randomly alternating with empty checks — server-side behavior plus X search jitter, all normal. This program dedupes by tweet_id, so no duplicate emails or database rows; it goes quiet once the watched account posts something new. Raise `WATCH_INTERVAL_SECONDS` to reduce cost.
 - A single twitterapi.io key can have only one active WebSocket connection at a time.
 - `x_curl` cookies expire. Copy fresh curl commands from your browser when historical fetching fails.
 - curl files contain cookies, and `.env` contains secrets and passwords. Never commit them to git.

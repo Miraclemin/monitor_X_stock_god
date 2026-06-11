@@ -31,6 +31,22 @@ def resolve_user_id(api_key, username):
     return user_id, user
 
 
+def check_search_visibility(api_key, username):
+    """tweet_filter 基于 X 搜索层；from: 搜不到的账号实时监控不会触发。"""
+    try:
+        resp = requests.get(
+            "https://api.twitterapi.io/twitter/tweet/advanced_search",
+            params={"query": f"from:{username}", "queryType": "Latest"},
+            headers={"X-API-Key": api_key},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        return len(resp.json().get("tweets") or [])
+    except Exception as exc:
+        print(f"搜索可见性检查失败（不影响克隆）：{exc}")
+        return None
+
+
 def find_source_dir(curl_base, usernames, explicit):
     candidates = [explicit] if explicit else usernames
     for name in candidates:
@@ -59,6 +75,15 @@ def main():
     source_dir = find_source_dir(curl_base, config["watch"]["usernames"], args.source)
     new_id, user = resolve_user_id(config["api_key"], username)
     print(f"@{user.get('userName')}（{user.get('name')}）userId={new_id} 粉丝={user.get('followers')}")
+
+    visible = check_search_visibility(config["api_key"], username)
+    if visible == 0:
+        print(
+            "⚠️ 警告：X 搜索查不到该账号的任何帖子（from: 搜索返回 0 条）。\n"
+            "   tweet_filter 规则基于搜索层，该账号的实时监控可能永远不会触发，详见 README 注意事项。"
+        )
+    elif visible:
+        print(f"搜索可见性 OK：from:{username} 可搜到 {visible} 条")
 
     target_dir.mkdir(parents=True, exist_ok=True)
     cloned = 0

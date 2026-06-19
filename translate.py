@@ -13,25 +13,24 @@ def _llm_config():
     return load_config().get("llm") or {}
 
 
-def chat(prompt, retries=8, timeout=180):
-    settings = _llm_config()
-    url = settings.get("url")
-    key = settings.get("key")
-    model = settings.get("model")
-    if not url or not key or not model:
-        raise RuntimeError("llm config missing url/key/model")
+def _provider(settings):
+    explicit = (settings.get("provider") or "").strip().lower()
+    if explicit:
+        return explicit
+    if settings.get("google_key"):
+        return "google"
+    if settings.get("key") or settings.get("url"):
+        return "openai"
+    raise RuntimeError("llm config missing: set GOOGLE_API_KEY or LLM_URL/LLM_KEY/LLM_MODEL")
 
-    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}).encode()
+
+def _post(url, headers, payload, retries, timeout):
+    body = json.dumps(payload).encode()
     for i in range(retries):
         try:
-            req = urllib.request.Request(
-                url,
-                data=body,
-                headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
-            )
+            req = urllib.request.Request(url, data=body, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                data = json.loads(r.read())
-            return data["choices"][0]["message"]["content"]
+                return json.loads(r.read())
         except urllib.error.HTTPError as exc:
             if exc.code in (429, 500, 502, 503, 529) and i < retries - 1:
                 wait = 4 * (i + 1)
@@ -45,6 +44,40 @@ def chat(prompt, retries=8, timeout=180):
                 continue
             raise
     raise RuntimeError("chat failed")
+
+
+def _chat_openai(prompt, settings, retries, timeout):
+    url = settings.get("url")
+    key = settings.get("key")
+    model = settings.get("model")
+    if not url or not key or not model:
+        raise RuntimeError("llm config missing url/key/model")
+    headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}
+    data = _post(url, headers, payload, retries, timeout)
+    return data["choices"][0]["message"]["content"]
+
+
+def _chat_google(prompt, settings, retries, timeout):
+    key = settings.get("google_key")
+    model = settings.get("google_model") or "gemini-3.1-flash-lite"
+    if not key:
+        raise RuntimeError("llm config missing GOOGLE_API_KEY")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0}}
+    data = _post(url, {"Content-Type": "application/json"}, payload, retries, timeout)
+    parts = data["candidates"][0]["content"]["parts"]
+    return "".join(p["text"] for p in parts if "text" in p)
+
+
+def chat(prompt, retries=8, timeout=180):
+    settings = _llm_config()
+    provider = _provider(settings)
+    if provider == "google":
+        return _chat_google(prompt, settings, retries, timeout)
+    if provider == "openai":
+        return _chat_openai(prompt, settings, retries, timeout)
+    raise RuntimeError(f"unknown llm provider: {provider}")
 
 
 def translate_text(text):

@@ -64,9 +64,12 @@ def load_config():
             "max_months": _int("HISTORY_MAX_MONTHS", 0),
         },
         "llm": {
+            "provider": _str("LLM_PROVIDER"),
             "url": _str("LLM_URL"),
             "key": _str("LLM_KEY"),
             "model": _str("LLM_MODEL"),
+            "google_key": _str("GOOGLE_API_KEY"),
+            "google_model": _str("GOOGLE_MODEL", "gemini-3.1-flash-lite"),
         },
         "translate": {"enabled": _bool("TRANSLATE_ENABLED", True)},
         "email": {
